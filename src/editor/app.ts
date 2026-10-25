@@ -74,7 +74,15 @@ function getDl(){
   if(!dlPromise) dlPromise = (window.claude && window.claude.use) ? window.claude.use('downloads').catch(()=>null) : Promise.resolve(undefined);
   return dlPromise;
 }
-async function offer(filename, blob){
+/* ---------- numer zamówienia w nazwie pliku ---------- */
+// Dopisywany z przodu: 1234_organizer_400x480.3mf. Puste pole = nazwy jak dotąd.
+function orderNo(){
+  const el = $('#orderNo'); if(!el) return '';
+  return el.value.trim().replace(/[<>:"/\\|?*\u0000-\u001f]+/g, '-').replace(/\s+/g, '_').replace(/^[._-]+|[._-]+$/g, '').slice(0, 60);
+}
+const withOrder = name => { const n = orderNo(); return n ? `${n}_${name}` : name; };
+async function offer(filename, blob, raw = false){
+  if(!raw) filename = withOrder(filename);
   if(desktop.on){
     try{ const p = await desktop.save(filename, blob); toast('Zapisano w folderze zleceń: ' + p.split(/[\\/]/).slice(-2).join('\\')); }
     catch(e){ toast('Nie udało się zapisać pliku: ' + e); }
@@ -590,6 +598,7 @@ function renderSlicer(){
   const b = $('#toSlicer'); if(b) b.onclick = () => { const d = state.drawer; sendToSlicer(usage(), `organizer_${d.w}x${d.d}.3mf`); };
 }
 async function sendBlob(blob, name, n){
+  name = withOrder(name);
   helper.busy = true; renderSlicer();
   try{
     if(desktop.on){
@@ -979,7 +988,7 @@ $('#lList').addEventListener('click', e => {
     if(state.items.length && !b.dataset.arm){ b.dataset.arm = '1'; b.textContent = 'Zastąpić obecny? Kliknij'; setTimeout(() => { if(b.isConnected){ delete b.dataset.arm; b.textContent = 'Wczytaj'; } }, 3000); return; }
     applyLayout(l); $('#ovLay').hidden = true; toast(`Wczytano układ „${l.name}”.`);
   } else if(b.dataset.l === 'file'){
-    offer(slug(l.name) + '.json', new Blob([JSON.stringify(l, null, 1)], {type:'application/json'}));
+    offer(slug(l.name) + '.json', new Blob([JSON.stringify(l, null, 1)], {type:'application/json'}), true);
   } else {
     if(!b.dataset.arm){ b.dataset.arm = '1'; b.textContent = 'Na pewno?'; setTimeout(() => { if(b.isConnected){ delete b.dataset.arm; b.textContent = 'Usuń'; } }, 3000); return; }
     writeLayouts(a.filter(x => x !== l)); if(curName === l.name) curName = ''; renderLayouts();
@@ -988,7 +997,7 @@ $('#lList').addEventListener('click', e => {
 $('#lExport').onclick = () => {
   if(!state.drawer){ $('#lErr').textContent = 'Najpierw podaj wymiary szuflady.'; return; }
   const name = $('#lName').value.trim() || curName || `Szuflada ${state.drawer.w}x${state.drawer.d}`;
-  offer(slug(name) + '.json', new Blob([JSON.stringify(snapshot(name), null, 1)], {type:'application/json'}));
+  offer(slug(name) + '.json', new Blob([JSON.stringify(snapshot(name), null, 1)], {type:'application/json'}), true);
 };
 $('#lImport').onclick = () => $('#lFile').click();
 $('#lFile').addEventListener('change', e => {
@@ -1541,7 +1550,7 @@ async function presSnapshot(){
     presSetSize(size0.x, size0.y, pr0); presRender();
     const blob = await new Promise(r => out.toBlob(r, 'image/png'));
     const D = state.drawer, name = `zdjecie_organizer_${D.w}x${D.d}_${pres.shot}_${w}x${h}.png`;
-    await offer(name, blob);
+    await offer(name, blob, true);
   }catch(e){ toast('Nie udało się wykonać zdjęcia: ' + (e && e.message || e)); presLayout(); }
   finally{ btn.disabled = false; $('#presBusy').hidden = true; }
 }
@@ -1582,6 +1591,9 @@ mountSingle({offer, toast, helperOk: () => helper.ok, sendBlob, cost: costOf, be
 renderModelTabs(applyModel);
 
 load(); bindSettings(); getDl(); refresh();
+{ const o = $('#orderNo'), x = $('#orderClr'), sync = () => { x.hidden = !o.value; o.closest('.orderchip').classList.toggle('on', !!orderNo()); };
+  o.addEventListener('input', sync); o.addEventListener('keydown', e => { if(e.key === 'Enter') o.blur(); });
+  x.onclick = () => { o.value = ''; sync(); o.focus(); }; sync(); }
 if(!inClaude){ pingHelper(); if(!desktop.on) setInterval(pingHelper, 8000); }
 if(desktop.on){ document.body.classList.add('desktop'); const jb = $('#jobsBtn'); if(jb){ jb.hidden = false; jb.onclick = () => desktop.openFolder().catch(e => toast('Nie udało się otworzyć folderu: ' + e)); } }
 if(getModel(activeModel()).kind !== 'layout') applyModel(activeModel());

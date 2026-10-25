@@ -29,6 +29,14 @@ button,input,select{font:inherit;color:inherit}
 .spacer{flex:1}
 .dimchip{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:6px 10px 6px 12px;cursor:pointer}
 .dimchip span{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+.orderchip{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:4px 6px 4px 12px}
+.orderchip span{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+.orderchip input{border:0;background:transparent;font:500 14px var(--f-mono);color:var(--ink);width:9em;padding:4px 0;outline:none}
+.orderchip:focus-within{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 25%,transparent)}
+.orderchip.on{border-color:var(--accent)}
+.orderchip.on span{color:var(--accent)}
+.orderchip button{border:0;background:none;color:var(--muted);font-size:18px;line-height:1;cursor:pointer;padding:0 4px}
+.orderchip button:hover{color:var(--ink)}
 .dimchip b{font:500 14px var(--f-mono);font-variant-numeric:tabular-nums}
 .dimchip em{font-style:normal;color:var(--accent);font-weight:600;font-size:13px}
 .tabs{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:3px}
@@ -205,6 +213,7 @@ kbd{font:11px var(--f-mono);border:1px solid var(--line);border-bottom-width:2px
   <header class="top">
     <h1>Konfigurator produkcyjny<small>Modele do druku 3D · Bambu Lab P1S</small></h1>
     <div class="tabs mtabs" id="modelTabs" role="tablist" aria-label="Model"></div>
+    <label class="orderchip" title="Dopisywany na początku nazwy każdego pliku do druku (STL, 3MF, ZIP, PDF). Puste pole = nazwy bez zmian."><span>Nr zamówienia</span><input id="orderNo" type="text" placeholder="np. 1234" autocomplete="off" spellcheck="false" maxlength="60"><button id="orderClr" type="button" aria-label="Wyczyść numer zamówienia" hidden>×</button></label>
     <button class="dimchip lay-only" id="drawerBtn" type="button"><span>Szuflada</span><b id="drawerDims">—</b><em>Zmień</em></button>
     <button class="btn lay-only" id="layoutsBtn" type="button" style="padding:8px 12px">Zapisz / wczytaj układ</button>
     <button class="btn lay-only" id="pdfBtn" type="button" style="padding:8px 12px">Instrukcja PDF</button>

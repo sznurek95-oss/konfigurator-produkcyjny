@@ -38,13 +38,17 @@ def main():
         pg.click('#toSlicer'); pg.wait_for_timeout(1200)
         pg.click('#dlAll'); pg.wait_for_timeout(800)
         pg.click('#jobsBtn'); pg.wait_for_timeout(200)
+        pg.fill('#orderNo', ' ZAM 1234/A ')  # numer zamówienia: dopisany z przodu, znaki zabronione zamienione
         pg.click('#modelTabs >> text=Wieszak'); pg.wait_for_timeout(400)
         pg.click('#sgBambu'); pg.wait_for_timeout(800)
         calls = pg.evaluate('window.__calls')
         b.close()
     seq = [c['cmd'] for c in calls]
     want = ['slicer_status', 'save_job', 'open_in_slicer', 'save_job', 'open_jobs_folder', 'save_job', 'open_in_slicer']
-    ok = seq == want and all(c.get('bytes', 1) > 1000 for c in calls if c['cmd'] == 'save_job') and not errs
+    names = [c['opts']['headers']['x-name'] for c in calls if c['cmd'] == 'save_job']
+    ok_names = names == ['organizer_400x480.3mf', 'organizer_szuflada_400x480.zip', 'ZAM_1234-A_wieszak-na-grzejnik_wieszak-20-20_x4.3mf']
+    if not ok_names: print('nazwy:', names)
+    ok = ok_names and seq == want and all(c.get('bytes', 1) > 1000 for c in calls if c['cmd'] == 'save_job') and not errs
     for c in calls: print(' ', c['cmd'], c.get('opts') or '', c.get('bytes', ''))
     print('OK: tryb aplikacji' if ok else f'BŁĄD: {seq} {errs}')
     sys.exit(0 if ok else 1)

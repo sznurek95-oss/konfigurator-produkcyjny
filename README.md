@@ -18,6 +18,12 @@ zakładka **Releases**, plik `…_x64-setup.exe`). W aplikacji:
 Kod części na PC: `src-tauri/` (Tauri 2, Rust). Okno pokazuje `dist/app/index.html`.
 Ikonę rysuje `tools/ikona.py`.
 
+## Numer zamówienia w nazwie pliku
+
+Pole **Nr zamówienia** w nagłówku: wpisany numer trafia na początek nazwy każdego pliku do druku
+(STL, 3MF, ZIP, PDF i projekt wysyłany do Bambu Studio), np. `4471_organizer_400x480.3mf`.
+Puste pole = nazwy jak dotąd. Zapisy układów (.json) i zdjęcia z trybu prezentacji go nie dostają.
+
 ## Jak zbudować
 
 Potrzebne: Python 3 i TypeScript (`tsc`).
