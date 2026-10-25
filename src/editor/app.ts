@@ -286,7 +286,7 @@ svg.addEventListener('pointermove', e => {
   const nx = snapAxis(p.x - drag.ox, f.w, D.w, others.map(o=>[o.x,o.x+o.w]), thr);
   const ny = snapAxis(p.y - drag.oy, f.d, D.d, others.map(o=>[o.y,o.y+o.d]), thr);
   if(nx !== it.x || ny !== it.y){ it.x = nx; it.y = ny; drag.moved = true;
-    if(!rafPending){ rafPending = true; requestAnimationFrame(() => { rafPending = false; render2d(); renderStatus(); renderInspector(); }); } }
+    if(!rafPending){ rafPending = true; requestAnimationFrame(() => { rafPending = false; render2d(); renderStatus(); syncInspectorPos(it); }); } }
 });
 const endDrag = () => {
   if(fill.picking && fill.pick){
@@ -454,20 +454,21 @@ function renderLib(){
   const missing = PRESETS.filter(p => !state.templates.some(t => t.id === p.id)).length;
   $('#lib').innerHTML = (state.templates.length ? '' : '<li class="hint">Biblioteka jest pusta. Dodaj nowy moduł albo przywróć gotowe.</li>') + state.templates.map(t => {
     const g = geo(t), c = cnt.get(t.id)||0;
-    if(libAsk === t.id) return `<li class="mod confirm">${miniSvg(t)}
+    if(libAsk === t.id) return `<li class="mod confirm">${miniSvg(t, 40)}
       <div class="nm"><span>${esc(t.name)}</span></div>
       <div class="meta">${fmt(g.W)} × ${fmt(g.D)} × ${fmt(g.H)}</div>
       <div class="ask"><span>${c ? `Usunąć moduł i ${c} szt. z szuflady?` : 'Usunąć ten moduł z biblioteki?'}</span>
         <button class="btn dng" data-act="delyes" data-t="${t.id}" type="button">Usuń</button>
         <button class="btn" data-act="delno" data-t="${t.id}" type="button">Anuluj</button></div></li>`;
-    return `<li class="mod"><button class="xdel" data-act="del" data-t="${t.id}" type="button" title="Usuń moduł" aria-label="Usuń moduł ${esc(t.name)}">×</button>${miniSvg(t)}
-      <div class="nm"><span>${esc(t.name)}</span>${t.preset?'':'<span class="tag">własny</span>'}${c?`<span class="badge">${c} szt.</span>`:''}</div>
-      <div class="meta">${fmt(g.W)} × ${fmt(g.D)} × ${fmt(g.H)} · ${t.nx}×${t.ny}</div>
+    return `<li class="mod">${miniSvg(t, 40)}
+      <div class="nm"><span title="${esc(t.name)}">${esc(t.name)}</span>${t.preset?'':'<span class="tag">własny</span>'}${c?`<span class="badge" title="Sztuk w szufladzie">${c}</span>`:''}</div>
+      <button class="xdel" data-act="del" data-t="${t.id}" type="button" title="Usuń moduł" aria-label="Usuń moduł ${esc(t.name)}">×</button>
+      <div class="meta" style="grid-column:2/-1">${fmt(g.W)} × ${fmt(g.D)} × ${fmt(g.H)} · ${t.nx}×${t.ny}</div>
       <div class="acts">
-        <button class="btn pri grow" data-act="add" data-t="${t.id}" type="button" ${state.drawer?'':'disabled'}>Dodaj</button>
-        <button class="btn" data-act="edit" data-t="${t.id}" type="button">Edytuj</button>
-        <button class="btn" data-act="stl" data-t="${t.id}" type="button" title="Pobierz STL tego modułu">STL</button>
-        ${helper.ok ? `<button class="btn" data-act="bambu" data-t="${t.id}" type="button" title="Otwórz ten moduł w Bambu Studio">Bambu</button>` : ''}
+        <button class="btn sm out" data-act="add" data-t="${t.id}" type="button" ${state.drawer?'':'disabled'}>+ Dodaj</button>
+        <button class="btn sm" data-act="edit" data-t="${t.id}" type="button">Edytuj</button>
+        <button class="btn sm" data-act="stl" data-t="${t.id}" type="button" title="Pobierz STL tego modułu">STL</button>
+        ${helper.ok ? `<button class="btn sm" data-act="bambu" data-t="${t.id}" type="button" title="Otwórz ten moduł w Bambu Studio">Bambu</button>` : ''}
       </div></li>`;
   }).join('') + (missing ? `<li><button class="restore" data-act="restore" type="button">Przywróć usunięte gotowe moduły (${missing})</button></li>` : '');
 }
@@ -486,7 +487,7 @@ $('#lib').addEventListener('click', e => {
 });
 function renderInspector(){
   const it = selItem(), el = $('#inspector');
-  if(!it){ el.innerHTML = `<h2>Zaznaczony moduł</h2><p class="insp-empty">Kliknij moduł na planie, żeby go przesunąć, obrócić albo usunąć.</p>`; return; }
+  if(!it){ el.innerHTML = `<h2>Zaznaczony moduł</h2><p class="insp-empty">Kliknij moduł na planie, żeby go przesunąć, obrócić, zmienić rozmiar albo usunąć.</p>`; return; }
   const t = tpl(it.tid), f = fp(it), why = problems().get(it.id);
   el.innerHTML = `<h2><span><span class="dot" style="background:${t.color}"></span>${esc(t.name)}</span><small>${fmt(f.w)}×${fmt(f.d)} mm</small></h2>
     ${why?`<p class="warnline" style="color:var(--danger)">Moduł ${why.join(' i ')}.</p>`:''}
@@ -505,14 +506,14 @@ function renderInspector(){
           <input id="iSz" type="number" min="${MINSZ}" step="0.5" value="${fmt(resizeSide==='l'||resizeSide==='r' ? f.w : f.d).replace(',','.')}"></div>
         <button class="btn" id="iSzApply" type="button">Ustaw</button>
       </div>
-      <button class="btn pri" id="iFit" type="button">Dopasuj bok ${SIDE_NAMES[resizeSide]} do sąsiada / ścianki</button>
-      <p class="hint" style="margin:0">Przeciwległy bok zostaje na miejscu. Możesz też przeciągnąć uchwyt na krawędzi modułu na planie. Zmiana dotyczy tylko tego elementu.</p>
+      <button class="btn out" id="iFit" type="button">Dopasuj bok ${SIDE_NAMES[resizeSide]} do sąsiada / ścianki</button>
+      <p class="hint">Przeciwległy bok zostaje na miejscu. Możesz też przeciągnąć uchwyt na krawędzi modułu. Zmienia tylko ten egzemplarz.</p>
     </div>
     <div class="row">
-      <button class="btn" id="iRot" type="button">Obróć 90°</button>
-      <button class="btn" id="iDup" type="button">Duplikuj</button>
-      <button class="btn" id="iEdit" type="button">Edytuj moduł</button>
-      <button class="btn dng" id="iDel" type="button">Usuń</button>
+      <button class="btn sm" id="iRot" type="button" title="R">Obróć 90°</button>
+      <button class="btn sm" id="iDup" type="button" title="D">Duplikuj</button>
+      <button class="btn sm" id="iEdit" type="button">Edytuj moduł</button>
+      <button class="btn sm dng" id="iDel" type="button" title="Delete">Usuń</button>
     </div>`;
   const setPos = () => { const D = state.drawer, x = parseFloat($('#iX').value), y = parseFloat($('#iY').value);
     if(isFinite(x)) it.x = Math.max(0, Math.min(x, D.w-f.w)); if(isFinite(y)) it.y = Math.max(0, Math.min(y, D.d-f.d)); commit(); };
@@ -524,6 +525,12 @@ function renderInspector(){
   $('#iSz').addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); szApply(); } });
   $('#iRot').onclick = () => rotate(it); $('#iDup').onclick = () => duplicate(it);
   $('#iDel').onclick = () => removeItem(it); $('#iEdit').onclick = () => openTpl(t);
+}
+/** Lekka aktualizacja panelu w trakcie przeciągania: tylko pola pozycji. */
+function syncInspectorPos(it){
+  const x = $('#iX'), y = $('#iY');
+  if(!x || !y){ renderInspector(); return; }
+  x.value = fmt(it.x).replace(',', '.'); y.value = fmt(it.y).replace(',', '.');
 }
 function renderBom(){
   const used = usage(), bed = state.settings.bed;
@@ -549,7 +556,7 @@ function renderStatus(){
     <span>Wolne <b>${fmt(Math.max(0, D.w*D.d-area)/100,0)} cm²</b></span>
     ${it?`<span>Pozycja <b>${fmt(it.x)}, ${fmt(it.y)}</b></span>`:''}
     ${bad.size?`<span class="chip bad">${bad.size} ${bad.size===1?'kolizja':'kolizje'}</span>`:state.items.length?'<span class="chip ok">Układ pasuje</span>':''}
-    <button class="btn" id="clearAll" type="button" ${state.items.length?'':'disabled'}>Wyczyść</button>
+    <button class="btn sm" id="clearAll" type="button" ${state.items.length?'':'disabled'} title="Usuń wszystkie moduły z szuflady">Wyczyść</button>
     <span class="keys"><kbd>R</kbd> obrót · <kbd>D</kbd> kopia · <kbd>Del</kbd> usuń · strzałki przesuwają</span>`;
   const cb = $('#clearAll');
   cb.onclick = () => {
@@ -731,9 +738,8 @@ function previewTpl(){
   const g = geo(t), {cells, cw, cd} = compartments(g), s = Math.max(g.W, g.D);
   let r = `<rect width="${g.W}" height="${g.D}" fill="${t.color}"/>`;
   cells.forEach(c => r += `<rect x="${c[0]}" y="${c[1]}" width="${c[2]-c[0]}" height="${c[3]-c[1]}" fill="var(--panel)" fill-opacity=".7"/>`);
-  const fs = s/16;
-  r += `<text x="${g.W/2}" y="${g.D + fs*1.4}" text-anchor="middle" font-size="${fs}" font-family="IBM Plex Mono, monospace" fill="var(--muted)">${fmt(g.W)} × ${fmt(g.D)} × ${fmt(g.H)} mm · przegródka ${fmt(cw)} × ${fmt(cd)}</text>`;
-  $('#tPrev').innerHTML = `<svg viewBox="${-s*.05} ${-s*.05} ${g.W+s*.1} ${g.D+s*.05+fs*2}" style="height:150px">${r}</svg>`;
+  $('#tPrev').innerHTML = `<svg viewBox="${-s*.05} ${-s*.05} ${g.W+s*.1} ${g.D+s*.1}" style="height:96px">${r}</svg>
+    <div class="sg-range">${fmt(g.W)} × ${fmt(g.D)} × ${fmt(g.H)} mm · przegródka ${fmt(cw)} × ${fmt(cd)} mm</div>`;
 }
 function openTpl(t){
   editing = t || null; delArm = false;
@@ -1765,6 +1771,16 @@ function applyModel(id){
 }
 mountSingle({offer, toast, helperOk: () => helper.ok, sendBlob, cost: costOf, bed: () => state.settings.bed});
 renderModelTabs(applyModel);
+
+/* ---------- motyw: ciemny (domyślny) albo jasny ---------- */
+const THEME_KEY = 'konfigurator-motyw';
+let theme = 'dark'; try{ theme = localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark'; }catch(e){}
+function applyTheme(){
+  if(theme === 'light') document.documentElement.dataset.theme = 'light'; else delete document.documentElement.dataset.theme;
+  const b = $('#themeBtn'); b.textContent = theme === 'light' ? '☾ Ciemny' : '☀ Jasny'; b.title = theme === 'light' ? 'Przełącz na ciemny motyw' : 'Przełącz na jasny motyw';
+}
+applyTheme();
+$('#themeBtn').onclick = () => { theme = theme === 'light' ? 'dark' : 'light'; try{ localStorage.setItem(THEME_KEY, theme); }catch(e){} applyTheme(); refresh(); refreshSingle(); };
 
 load(); bindSettings(); getDl(); refresh();
 { const o = $('#orderNo'), x = $('#orderClr'), sync = () => { x.hidden = !o.value; o.closest('.orderchip').classList.toggle('on', !!orderNo()); };

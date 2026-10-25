@@ -17,16 +17,16 @@ export const KNIFE = 245;
 export type ZoneId = 'cutlery' | 'short' | 'utensils' | 'plates' | 'bowls' | 'pots' | 'lids' | 'spices' | 'pantry' | 'foil' | 'small';
 export const ZONES: Record<ZoneId, { name: string; color: string }> = {
   cutlery: { name: 'Sztućce', color: COLORS[0] },
-  short: { name: 'Łyżeczki i deserowe', color: COLORS[0] },
+  short: { name: 'Łyżeczki i deserowe', color: '#93B8DA' },   // jaśniejszy odcień sztućców: ta sama grupa, inna strefa
   utensils: { name: 'Przybory', color: COLORS[1] },
   plates: { name: 'Talerze', color: COLORS[2] },
   spices: { name: 'Przyprawy', color: COLORS[3] },
   small: { name: 'Drobiazgi', color: COLORS[4] },
   pantry: { name: 'Zapasy', color: COLORS[5] },
   bowls: { name: 'Miski i kubki', color: COLORS[6] },
-  foil: { name: 'Folie i torebki', color: COLORS[6] },
+  foil: { name: 'Folie i torebki', color: '#8FCBC8' },
   pots: { name: 'Garnki i patelnie', color: COLORS[7] },
-  lids: { name: 'Pokrywki', color: COLORS[7] },
+  lids: { name: 'Pokrywki', color: '#E3A394' },
 };
 
 export interface Dims { W: number; D: number; H: number }
