@@ -1,0 +1,68 @@
+# Po każdej zmianie w gałęzi main: testy, potem instalator dla Windows w zakładce Releases.
+name: Instalator Windows
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUTF8: "1"
+
+jobs:
+  testy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g typescript@5
+      - name: Budowanie strony
+        run: python3 tools/build.py
+      - name: Testy modeli
+        run: node --test tests/*.test.js
+
+  windows:
+    needs: testy
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm install -g typescript@5 @tauri-apps/cli@2
+      - name: Budowanie strony
+        run: python tools/build.py
+      - name: Testy części na PC
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+      - name: Budowanie instalatora
+        run: tauri build --config "{\"version\":\"0.3.${{ github.run_number }}\"}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: instalator
+          path: src-tauri/target/release/bundle/nsis/*.exe
+      - name: Publikacja w Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.3.${{ github.run_number }}
+          name: Konfigurator produkcyjny 0.3.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          body: |
+            Instalator dla Windows: pobierz plik `…_x64-setup.exe` poniżej i uruchom.
+            Zmiana: ${{ github.event.head_commit.message }}
+          files: src-tauri/target/release/bundle/nsis/*.exe

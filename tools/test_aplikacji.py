@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""Test trybu aplikacji na PC bez Windows: podstawia atrapę Tauri (window.__TAURI__)
+i sprawdza, że przyciski zapisują pliki do folderu zleceń i otwierają Bambu Studio.
+
+Użycie: python3 tools/test_aplikacji.py   (po python3 tools/build.py)
+"""
+import os, sys
+from playwright.sync_api import sync_playwright
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+URL = 'file://' + os.path.join(ROOT, 'dist', 'app', 'index.html')
+MOCK = r"""
+window.__calls = [];
+window.__TAURI__ = {core: {invoke: async (cmd, args, opts) => {
+  const rec = {cmd, opts: opts || null};
+  if (args instanceof Uint8Array) rec.bytes = args.length; else rec.args = args || null;
+  window.__calls.push(rec);
+  if (cmd === 'slicer_status') return {found: true, path: 'C:\\Bambu Studio\\bambu-studio.exe'};
+  if (cmd === 'save_job') return 'C:\\Dokumenty\\Konfigurator produkcyjny\\Zlecenia\\2026-01-01\\' + decodeURIComponent(opts.headers['x-name']);
+  return null;
+}}};
+"""
+
+
+def main():
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        pg = b.new_page(viewport={'width': 1400, 'height': 900})
+        errs = []
+        pg.on('pageerror', lambda e: errs.append(str(e)))
+        pg.add_init_script(MOCK)
+        pg.goto(URL)
+        pg.fill('#dW', '400'); pg.fill('#dD', '480'); pg.fill('#dH', '70'); pg.click('text=Zapisz wymiary')
+        pg.wait_for_timeout(300)
+        assert pg.is_visible('#jobsBtn'), 'brak przycisku Folder zleceń'
+        assert 'folderze zleceń' in pg.inner_text('#slicerBox'), pg.inner_text('#slicerBox')
+        pg.click('[data-act=add] >> nth=0'); pg.click('[data-act=add] >> nth=1'); pg.wait_for_timeout(300)
+        pg.click('#toSlicer'); pg.wait_for_timeout(1200)
+        pg.click('#dlAll'); pg.wait_for_timeout(800)
+        pg.click('#jobsBtn'); pg.wait_for_timeout(200)
+        pg.click('#modelTabs >> text=Wieszak'); pg.wait_for_timeout(400)
+        pg.click('#sgBambu'); pg.wait_for_timeout(800)
+        calls = pg.evaluate('window.__calls')
+        b.close()
+    seq = [c['cmd'] for c in calls]
+    want = ['slicer_status', 'save_job', 'open_in_slicer', 'save_job', 'open_jobs_folder', 'save_job', 'open_in_slicer']
+    ok = seq == want and all(c.get('bytes', 1) > 1000 for c in calls if c['cmd'] == 'save_job') and not errs
+    for c in calls: print(' ', c['cmd'], c.get('opts') or '', c.get('bytes', ''))
+    print('OK: tryb aplikacji' if ok else f'BŁĄD: {seq} {errs}')
+    sys.exit(0 if ok else 1)
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,10 @@
+{
+  "name": "konfigurator-produkcyjny",
+  "private": true,
+  "type": "module",
+  "description": "Narzędzie produkcyjne: modele parametryczne do druku 3D (TwojaSzuflada.pl)",
+  "scripts": {
+    "build": "python3 tools/build.py",
+    "test": "python3 tools/build.py && node --test tests/*.test.js"
+  }
+}

@@ -1,0 +1,27 @@
+[package]
+name = "konfigurator-produkcyjny"
+version = "0.3.0"
+description = "Konfigurator produkcyjny — modele do druku 3D"
+edition = "2021"
+
+[lib]
+name = "konfigurator_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
