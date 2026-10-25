@@ -172,11 +172,15 @@ function cellsOf(b: Placed & { node: BoxN }, cap: number): KitCell[] {
   const n = b.node, xs = lanes1D(b.w, n.cell?.[0], n.nx, cap), ys = lanes1D(b.d, n.cell?.[1], undefined, cap);
   // gdy podano wysokość przegródki, a moduł jest jednym rzędem — liczymy rzędy z docelowej głębokości
   const out: KitCell[] = [];
-  for (const py of ys) for (const px of xs)
+  for (const py of ys) for (const px of xs) {
+    const nx = sane(px.size, px.n), ny = sane(py.size, py.n);
+    // „{d}” w nazwie = największa średnica (cm), jaka naprawdę mieści się w przegródce
+    const inner = Math.min((px.size - (nx + 1) * WALL) / nx, (py.size - (ny + 1) * WALL) / ny);
     out.push({
-      x: r1(b.x + px.pos), y: r1(b.y + py.pos), w: px.size, d: py.size, zone: n.zone, label: n.label,
-      nx: sane(px.size, px.n), ny: sane(py.size, py.n), divPct: n.divPct ?? 100, hMax: n.hMax ?? null,
+      x: r1(b.x + px.pos), y: r1(b.y + py.pos), w: px.size, d: py.size, zone: n.zone, label: n.label.replace('{d}', String(Math.floor(inner / 10))),
+      nx, ny, divPct: n.divPct ?? 100, hMax: n.hMax ?? null,
     });
+  }
   return out;
 }
 
@@ -191,17 +195,26 @@ export interface KitDef {
   why: string[];
   /** Minimalne wnętrze szuflady. */
   need: Dims;
+  /** Minimalny użyteczny rozmiar stołu drukarki (mm), gdy układ ma rząd, którego nie wolno ciąć (np. sztućce). */
+  minCap?: number;
   tree(d: Dims, cap: number): Node;
 }
 
 /** Blok sztućców o `L` przegródkach: z przodu rząd stołowy, za nim łyżeczki/deserowe, na końcu drobiazgi. */
-function cutleryBlock(D: number, L: number): Node {
+function cutleryBlock(D: number, L: number, cap: number): Node {
   const long = box('cutlery', 'Sztućce stołowe', { nx: L, hMax: 45 });
-  const short = box('short', 'Łyżeczki i deserowe', { nx: L, hMax: 45 });
-  const R = D - KNIFE;
-  if (R > 250) return Y(fr(box('small', 'Drobiazgi', { cell: [58, 60], hMax: 45 })), fix(220, short), fix(KNIFE, long));
-  if (R >= 90) return Y(fr(short), fix(KNIFE, long));
-  return Y(fr(box('small', 'Drobiazgi', { cell: [58, 40], hMax: 45 })), fix(KNIFE, long));
+  const shortRow = (d: number) => box('short', d >= 200 ? 'Łyżeczki i deserowe' : 'Łyżeczki', { nx: L, hMax: 45 });
+  const small = box('small', 'Drobiazgi', { cell: [58, 40], hMax: 45 });
+  const R = r1(D - KNIFE);
+  if (R >= 150) {
+    // rząd łyżeczek: 200 mm mieści deserowe (17–19 cm); nadmiar idzie na drobiazgi, chyba że to wąski pasek
+    const s = R - 200 >= 40 ? 200 : R;
+    return s < R ? Y(fr(small), fix(s, shortRow(s)), fix(KNIFE, long)) : Y(fr(shortRow(s)), fix(KNIFE, long));
+  }
+  if (R >= 40) return Y(fr(small), fix(KNIFE, long));
+  // wąski pasek z tyłu: rząd sztućców bierze tyle, ile się da wydrukować, reszta zostaje wolna
+  const L1 = Math.min(cap, r1(D));
+  return L1 >= D ? long : Y(fr(gap('Wąski pasek z tyłu')), fix(L1, long));
 }
 /** Liczba przegródek na sztućce: pełna szerokość do 6 przegródek, szerzej — blok 6 przegródek + kolumna obok. */
 function cutleryLanes(W: number) { return Math.round((W - WALL) / (60 + WALL)); }
@@ -215,24 +228,24 @@ function bins(W: number, D: number, cap: number, zone: ZoneId, labels: string[],
 
 export const KITS: KitDef[] = [
   {
-    id: 'sztucce', name: 'Sztućce', need: { W: 170, D: 270, H: 35 },
+    id: 'sztucce', name: 'Sztućce', need: { W: 170, D: 270, H: 35 }, minCap: KNIFE,
     short: 'Przegródki na sztućce stołowe, łyżeczki i deserowe, drobiazgi z boku.',
     where: 'Górna, płytka szuflada pod blatem — najlepiej blisko zmywarki i stołu.',
     why: [
-      'Nóż stołowy ma typowo 22–24 cm, więc rząd sztućców stołowych ma 245 mm głębokości (wnętrze ok. 241 mm) i mieści się na stole P1S.',
-      'Przegródki ok. 58–66 mm: czerpak łyżki stołowej ma około 5 cm. Podobny podział mają kasetki IKEA UPPDATERA (32, 52 i 72 cm szerokości, 50 cm głębokości) i Hettich OrgaTray.',
-      'Najczęściej używane sztućce stołowe leżą z przodu, łyżeczki i deserowe za nimi — wyciągasz je jednym ruchem, bez sięgania w głąb.',
+      'Nóż stołowy ma typowo 22–24 cm, więc rząd sztućców stołowych ma 245 mm głębokości (wnętrze ok. 241 mm) i mieści się na stole P1S. Tego rzędu nie wolno ciąć — nóż nie przeleży nad ścianką.',
+      'Przegródki ok. 55–66 mm: czerpak łyżki stołowej ma ok. 4–4,5 cm, więc łyżki układają się jedna w drugiej. Liczba przegródek (3–6) zależy od szerokości szuflady; gotowe kasetki (np. IKEA UPPDATERA 32 × 50 i 52 × 50 cm) mają stały rozmiar i zostawiają luz.',
+      'Najczęściej używane sztućce stołowe leżą z przodu, łyżeczki (13–14 cm) i deserowe (17–19 cm) za nimi — rząd ma 200 mm, a gdy szuflada jest płytsza, zostają same łyżeczki.',
       'Moduły mają 45 mm wysokości: mieszczą stos kilku sztućców, a resztę wysokości szuflady zostawiają wolną.',
     ],
-    tree({ W, D }) {
+    tree({ W, D }, cap) {
       const L = cutleryLanes(W);
-      if (L <= 6) return cutleryBlock(D, Math.max(3, L));
+      if (L <= 6) return cutleryBlock(D, Math.max(3, L), cap);
       const Bw = lanesW(6, 58);
-      return X(fix(Bw, cutleryBlock(D, 6)), fr(box('small', 'Drobiazgi', { cell: [60, 85], hMax: 45 })));
+      return X(fix(Bw, cutleryBlock(D, 6, cap)), fr(box('small', 'Drobiazgi', { cell: [60, 85], hMax: 45 })));
     },
   },
   {
-    id: 'sztucce-przybory', name: 'Sztućce i przybory', need: { W: 440, D: 290, H: 40 },
+    id: 'sztucce-przybory', name: 'Sztućce i przybory', need: { W: 440, D: 290, H: 40 }, minCap: KNIFE,
     short: 'Szeroka szuflada: sztućce z jednej strony, niskie korytka na przybory z drugiej.',
     where: 'Górna szuflada w szafce 60 cm i szerszej (wnętrze ok. 490 mm i więcej).',
     why: [
@@ -240,21 +253,22 @@ export const KITS: KitDef[] = [
       'Przybory kuchenne (chochle, szpatułki, łyżki do gotowania) mają często 30–38 cm, więcej niż maks. moduł z drukarki. Dlatego leżą w niskich (25 mm) korytkach, które przechodzą przez styk modułów.',
       'Przegródki na przybory mają ok. 100 mm: czerpak chochli ma około 9–10 cm.',
     ],
-    tree({ W, D }) {
-      return X(fix(lanesW(5, 58), cutleryBlock(D, 5)), fr(box('utensils', 'Przybory kuchenne', { cell: [100], hMax: 25 })));
+    tree({ W, D }, cap) {
+      return X(fix(lanesW(5, 58), cutleryBlock(D, 5, cap)), fr(box('utensils', 'Przybory kuchenne', { cell: [100], hMax: 25 })));
     },
   },
   {
     id: 'przybory', name: 'Przybory kuchenne', need: { W: 190, D: 300, H: 30 },
-    short: 'Niskie korytka na chochle i szpatułki, z rzędem krótkich przegródek z przodu.',
+    short: 'Niskie korytka na chochle i szpatułki przez całą głębokość, z boku przegródki na drobne przybory.',
     where: 'Szuflada przy płycie grzewczej, blisko blatu roboczego.',
     why: [
-      'Chochle, łopatki i wałki mają 30–38 cm. Korytka mają 25 mm wysokości, więc długie przybory leżą swobodnie ponad ściankami na styku modułów.',
-      'Przegródki ok. 95 mm na przybory z dużymi końcówkami (chochle, łopatki), z przodu krótsze: obieraczka, otwieracz, korkociąg (do 18 cm).',
+      'Chochle, łopatki i wałki mają 30–38 cm, więcej niż moduł z drukarki. Korytka biegną przez całą głębokość szuflady (kilka modułów w jednej linii) i mają 25 mm wysokości, więc przybór leży swobodnie ponad stykiem modułów.',
+      'Korytka ok. 95 mm na przybory z dużymi końcówkami (chochle, łopatki), z boku węższe przegródki na krótkie: obieraczka, otwieracz, korkociąg (do 18 cm).',
       'Przybory używane w trakcie gotowania muszą być pod ręką — stąd szuflada przy płycie, nie w dalszej części kuchni.',
     ],
     tree({ W, D }) {
-      return Y(fr(box('utensils', 'Przybory długie', { cell: [95], hMax: 25 })), fix(190, box('utensils', 'Drobne przybory', { cell: [62], hMax: 25 })));
+      return X(fr(box('utensils', 'Przybory długie', { cell: [95], hMax: 25 }), { min: 98.5 }),
+        fix(lanesW(2, 62), box('utensils', 'Drobne przybory', { cell: [62, 185], hMax: 25 }), { opt: true }));
     },
   },
   {
@@ -262,17 +276,17 @@ export const KITS: KitDef[] = [
     short: 'Siatka przegródek na słoiczki stojące albo leżące, w zależności od wysokości szuflady.',
     where: 'Płytka szuflada tuż przy płycie grzewczej lub pod blatem roboczym.',
     why: [
-      'Słoiczki 100–120 ml mają ok. 4,3–5 cm średnicy i ok. 10 cm wysokości. Przegródki 54 mm trzymają je pionowo bez luzu.',
-      'Gdy szuflada ma mniej niż 100 mm wysokości, słoiczki leżą: przegródki 50 × 108 mm, wieczkiem do przodu.',
+      'Słoiczki i młynki do przypraw mają ok. 4,5–5 cm średnicy i 10–11,5 cm wysokości. Przegródki 54 mm trzymają je pionowo, a szuflada musi mieć co najmniej 120 mm wysokości.',
+      'W niższej szufladzie słoiczki leżą: przegródki 54 × 120 mm, etykietą do góry, wieczkiem do przodu.',
       'Z przodu rząd większych przegródek (72 mm) na młynki, sól i cukier w pojemnikach.',
       'Niskie ścianki (28 mm) wystarczą, żeby słoiczki się nie przewracały, i oszczędzają filament.',
     ],
     tree({ D, H }) {
-      if (H >= 100) {
+      if (H >= 120) {
         const grid = box('spices', 'Przyprawy stojące', { cell: [54, 54], hMax: 28 });
         return D >= 190 ? Y(fr(grid), fix(80, box('spices', 'Młynki i pojemniki', { cell: [72, 72], hMax: 28 }), { opt: true })) : grid;
       }
-      return box('spices', 'Przyprawy leżące', { cell: [50, 108], hMax: 28 });
+      return box('spices', 'Przyprawy leżące', { cell: [54, 120], hMax: 28 });
     },
   },
   {
@@ -281,19 +295,20 @@ export const KITS: KitDef[] = [
     where: 'Dolna, głęboka szuflada pod płytą grzewczą.',
     why: [
       'Ciężkie, rzadziej przesuwane przedmioty idą na dół szafki: nic nie trzeba dźwigać wyżej niż do pasa.',
-      'Rondle i garnki mieszczą się stosami w strefach ≤ 250 mm (garnek 24 cm + luz); każda strefa ma ścianki, więc stos się nie przesuwa przy otwieraniu.',
-      'Gdy szuflada ma co najmniej 240 mm wysokości, pokrywki i patelnie stoją pionowo w stojakach: szczelina 28 mm na pokrywkę i 48 mm na patelnię z uchwytem. Pokrywkę lub patelnię oparta na kantach utrzymuje szczelina o długości ok. 200 mm.',
+      'Moduł z drukarki ma najwyżej ok. 25 cm, więc strefa na stos garnków mieści garnek do ok. 23–24 cm średnicy — nazwa każdej strefy podaje, jaka średnica naprawdę się zmieści. Ścianki mają tylko 40 mm: trzymają stos w miejscu, a uchwyty i rączki rondli przechodzą nad nimi.',
+      'Gdy szuflada ma co najmniej 250 mm wysokości (i 450 mm głębokości), pokrywki i patelnie stoją pionowo z przodu, jak w organizerach Joseph Joseph DrawerStore (7 przegródek na 30–56 cm): przegródki 45 mm na pokrywki i 60 mm na patelnie, 245 mm długości i 60 mm wysokości — pokrywka do 28 cm stoi na dnie, a nie na ściankach.',
     ],
     tree({ W, D, H }, cap) {
-      if (H >= 240 && W >= 430) {
+      if (H >= 250 && W >= 430 && D >= 450 && cap >= KNIFE) {
+        const dmax = Math.min(28, Math.floor((H - 5) / 10));
         const racks = X(
-          fix(lanesW(7, 28), box('lids', 'Stojak na pokrywki', { nx: 7, hMax: 45 })),
-          fix(lanesW(4, 48), box('pots', 'Stojak na patelnie', { nx: 4, hMax: 45 })),
-          fr(box('small', 'Akcesoria', { cell: [60, 60], hMax: 45 }), { opt: true }),
+          fix(lanesW(5, 45), box('lids', `Pokrywki ⌀ do ${dmax} cm`, { nx: 5, hMax: 60 })),
+          fix(lanesW(3, 60), box('pots', `Patelnie ⌀ do ${dmax} cm`, { nx: 3, hMax: 60 })),
+          fr(box('small', 'Akcesoria', { cell: [60, 60], hMax: 40 }), { opt: true, min: 60 }),
         );
-        return Y(fr(bins(W, D - 205, cap, 'pots', ['Garnki duże', 'Garnki średnie', 'Rondle i durszlaki'])), fix(205, racks));
+        return Y(fr(bins(W, D - KNIFE, cap, 'pots', ['Garnki ⌀ do {d} cm', 'Rondle ⌀ do {d} cm', 'Durszlaki i miski ⌀ do {d} cm'], 40)), fix(KNIFE, racks));
       }
-      return bins(W, D, cap, 'pots', ['Garnki duże ⌀ do 24', 'Garnki średnie ⌀ do 20', 'Patelnie', 'Pokrywki (stos)']);
+      return bins(W, D, cap, 'pots', ['Garnki ⌀ do {d} cm', 'Rondle ⌀ do {d} cm', 'Patelnie ⌀ do {d} cm', 'Pokrywki (stos) ⌀ do {d} cm'], 40);
     },
   },
   {
@@ -301,25 +316,26 @@ export const KITS: KitDef[] = [
     short: 'Talerze na stojaku (przy wysokiej szufladzie) albo w strefie na stos, do tego miski i kubki.',
     where: 'Środkowa lub dolna szuflada, blisko zmywarki.',
     why: [
-      'Talerz obiadowy ma 25–30 cm średnicy, deserowy ok. 20 cm. Z tego powodu stos 27 cm nie mieści się w jednym module na stół 256 mm — strefa talerzy jest wolna, bez ścianek (podłóż matę antypoślizgową).',
-      'Przy wysokości szuflady od 215 mm talerze stoją na krawędzi: stojaki mają szczeliny 16 mm i 205 mm długości, wystarczająco, żeby utrzymać talerz do 30 cm.',
-      'Miski ⌀ do 17 cm i kubki (cela 100 mm) dostają osobne strefy, żeby nie stać na talerzach.',
-      'Talerze i kubki z przodu — najczęściej wyjmowane.',
+      'Talerz obiadowy ma 25–28 cm średnicy, deserowy ok. 19–21 cm. Stos talerzy 27 cm potrzebuje strefy ok. 29 × 29 cm, a moduł na stół 256 mm ma najwyżej ok. 25 cm — dlatego przy P1S ta strefa zostaje wolna (podłóż matę antypoślizgową), a przy większym stole jest niskim modułem.',
+      'Talerz stojący na krawędzi potrzebuje szuflady wyższej niż jego średnica: stojak pojawia się dopiero od 275 mm wysokości. Przegródki 30 mm (deserowe 26 mm) mieszczą profil talerza, mają 245 mm długości i 60 mm wysokości, więc talerz 27 cm stoi na dnie, a nie na ściankach.',
+      'Miski i kubki dostają osobne strefy, żeby nie stać na talerzach. Przegródka na kubek ma 95 × 125 mm — mieści kubek z uchem. Nazwa strefy na miski podaje, jaka średnica naprawdę się zmieści.',
+      'Talerze z przodu — najczęściej wyjmowane i najcięższe, więc nie trzeba ich przenosić nad innymi rzeczami.',
     ],
     tree({ W, D, H }, cap) {
-      if (H >= 215) {
+      const mugs = (o: Partial<Part> = {}) => fr(box('bowls', 'Kubki i szklanki', { cell: [95, 125], hMax: 70 }), o);
+      if (H >= 275 && cap >= KNIFE) {
         const racks = X(
-          fix(lanesW(8, 16), box('plates', 'Talerze obiadowe', { nx: 8, hMax: 50 })),
-          fix(lanesW(5, 16), box('plates', 'Talerze głębokie', { nx: 5, hMax: 50 })),
-          fix(lanesW(6, 16), box('plates', 'Talerze deserowe', { nx: 6, hMax: 50 })),
-          fr(box('bowls', 'Kubki', { cell: [100, 100], hMax: 70 }), { opt: true }),
+          fix(lanesW(7, 30), box('plates', 'Talerze obiadowe', { nx: 7, hMax: 60 })),
+          fix(lanesW(6, 26), box('plates', 'Talerze deserowe', { nx: 6, hMax: 60 }), { opt: true }),
+          mugs({ opt: true, min: 98.5 }),   // 95 mm wnętrza + 2 ścianki
+          fix(lanesW(4, 34), box('plates', 'Talerze głębokie', { nx: 4, hMax: 60 }), { opt: true }),
         );
-        return Y(fr(X(fr(box('bowls', 'Miski i salaterki', { cell: [150, 150], hMax: 70 })), fr(box('bowls', 'Kubki i szklanki', { cell: [100, 100], hMax: 70 })))), fix(205, racks));
+        return Y(fr(X(fr(box('bowls', 'Miski ⌀ do {d} cm', { cell: [150, 150], hMax: 70 })), mugs())), fix(KNIFE, racks));
       }
       const plateZone: Node = cap >= 290 ? box('plates', 'Talerze obiadowe (stos)', { nx: 1, hMax: 35 }) : gap('Talerze obiadowe — stos ⌀ 27 cm, bez modułu');
       return X(
-        fix(290, Y(fr(box('bowls', 'Miski ⌀ do 17', { cell: [170, 170], hMax: 80 })), fix(290, plateZone))),
-        fr(box('bowls', 'Kubki i szklanki', { cell: [100, 100], hMax: 70 })),
+        fix(290, Y(fr(box('bowls', 'Miski ⌀ do {d} cm', { cell: [170, 170], hMax: 80 })), fix(290, plateZone))),
+        mugs(),
       );
     },
   },
@@ -341,7 +357,7 @@ export const KITS: KitDef[] = [
     short: 'Długie korytka na rolki folii i papieru do pieczenia, obok przegródki na torebki.',
     where: 'Płytka szuflada przy blacie roboczym.',
     why: [
-      'Pudełko folii aluminiowej lub spożywczej ma ok. 33–45 cm długości i 6 cm średnicy. Dlatego cztery korytka 64 mm biegną przez całą głębokość szuflady (kilka niskich modułów w rzędzie).',
+      'Pudełko folii aluminiowej, spożywczej albo papieru do pieczenia ma ok. 30–45 cm długości i 5–6 cm przekroju. Dlatego cztery korytka 64 mm biegną przez całą głębokość szuflady (kilka niskich modułów w rzędzie).',
       'Niskie (22 mm) ścianki: pudełka leżą swobodnie ponad stykiem modułów, a ostrze obcinarki nie zahacza.',
       'Obok miejsce na rolki worków, torebki strunowe i drobiazgi.',
     ],
@@ -361,10 +377,11 @@ export const KITS: KitDef[] = [
       'Małe rzeczy z tyłu (rzadziej potrzebne), długie z przodu.',
     ],
     tree() {
+      // w płytkiej szufladzie najpierw znikają średnie, potem małe przegródki — korytko na nożyczki (20 cm) zostaje
       return Y(
-        fix(70, box('small', 'Baterie, zapałki, świeczki', { cell: [60, 62], hMax: 35 })),
-        fix(110, box('small', 'Taśmy, klej, notes', { cell: [100, 100], hMax: 35 })),
-        fr(box('small', 'Nożyczki, długopisy, szczypce', { cell: [48], hMax: 30 })),
+        fix(70, box('small', 'Baterie, zapałki, świeczki', { cell: [60, 62], hMax: 35 }), { opt: true }),
+        fix(110, box('small', 'Taśmy, klej, notes', { cell: [100, 100], hMax: 35 }), { opt: true }),
+        fr(box('small', 'Nożyczki, długopisy, szczypce', { cell: [48], hMax: 30 }), { min: 205 }),
       );
     },
   },
@@ -380,6 +397,7 @@ export function buildKit(def: KitDef, dim: Dims, bed: number): KitResult {
   if (D < n.D) return fail(`Za płytka szuflada: potrzeba co najmniej ${n.D} mm głębokości (jest ${D}).`);
   if (H < n.H) return fail(`Za niska szuflada: potrzeba co najmniej ${n.H} mm wysokości (jest ${H}).`);
   const cap = Math.max(60, Math.floor(bed - 6));
+  if (def.minCap && cap < def.minCap) return fail(`Za mały stół drukarki: ten układ ma rząd ${def.minCap} mm, którego nie można podzielić (potrzeba stołu co najmniej ${def.minCap + 6} mm).`);
   const placed: Placed[] = []; place(def.tree({ W, D, H }, cap), 0, 0, W, D, placed);
   const cells: KitCell[] = [], gaps: KitGap[] = [];
   for (const p of placed) {
