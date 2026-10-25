@@ -21,4 +21,9 @@ export const desktop = {
   /** Otwiera zapisany plik w Bambu Studio (albo w programie przypisanym do pliku). */
   async open(path: string): Promise<void> { await invoke('open_in_slicer', { path }); },
   async openFolder(): Promise<void> { await invoke('open_jobs_folder'); },
+  version(): Promise<string> { return invoke('app_version'); },
+  /** Nowa wersja w GitHub Releases albo null, gdy aplikacja jest aktualna. */
+  checkUpdate(): Promise<{ version: string; current: string; notes?: string } | null> { return invoke('update_check'); },
+  /** Pobiera i instaluje aktualizację; aplikacja zamyka się i uruchamia ponownie. */
+  installUpdate(): Promise<void> { return invoke('update_install'); },
 };

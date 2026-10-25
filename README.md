@@ -15,6 +15,12 @@ zakładka **Releases**, plik `…_x64-setup.exe`). W aplikacji:
 - **Otwórz w Bambu Studio** zapisuje projekt w folderze zleceń i od razu otwiera go w slicerze —
   bez pomocnika `Bambu-most.bat`.
 
+**Aktualizacje:** po uruchomieniu aplikacja sprawdza zakładkę Releases. Gdy jest nowsza wersja,
+pokazuje pasek „Dostępna wersja …” z przyciskiem **Zainstaluj teraz** — pobiera, instaluje i uruchamia się
+ponownie. Numer wersji w nagłówku (np. `v0.3.5`) sprawdza na żądanie. Instalatory są podpisane kluczem
+z sekretów repozytorium `TAURI_SIGNING_PRIVATE_KEY` i `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; klucz
+publiczny jest w `src-tauri/tauri.conf.json`. Bez sekretów instalator się buduje, ale nie trafia do aktualizacji.
+
 Kod części na PC: `src-tauri/` (Tauri 2, Rust). Okno pokazuje `dist/app/index.html`.
 Ikonę rysuje `tools/ikona.py`.
 

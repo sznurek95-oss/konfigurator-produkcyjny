@@ -29,6 +29,13 @@ button,input,select{font:inherit;color:inherit}
 .spacer{flex:1}
 .dimchip{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:6px 10px 6px 12px;cursor:pointer}
 .dimchip span{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+.verchip{border:0;background:none;color:var(--muted);font:500 12px var(--f-mono);cursor:pointer;padding:4px 6px;border-radius:6px}
+.verchip:hover{color:var(--ink);background:var(--panel)}
+.verchip.new{color:var(--accent);font-weight:600}
+.updbar{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:40;display:flex;align-items:center;gap:12px;flex-wrap:wrap;max-width:calc(100vw - 32px);
+  background:var(--panel);border:1px solid var(--accent);border-radius:10px;padding:10px 12px 10px 16px;box-shadow:0 8px 30px rgba(0,0,0,.18)}
+.updbar b{font-weight:600}
+.updbar .hint{margin:0}
 .orderchip{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:4px 6px 4px 12px}
 .orderchip span{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
 .orderchip input{border:0;background:transparent;font:500 14px var(--f-mono);color:var(--ink);width:9em;padding:4px 0;outline:none}
@@ -219,6 +226,7 @@ kbd{font:11px var(--f-mono);border:1px solid var(--line);border-bottom-width:2px
     <button class="btn lay-only" id="pdfBtn" type="button" style="padding:8px 12px">Instrukcja PDF</button>
     <button class="btn pri lay-only" id="fillBtn" type="button" style="padding:8px 12px">Wypełnij automatycznie</button>
     <button class="btn" id="jobsBtn" type="button" hidden style="padding:8px 12px">Folder zleceń</button>
+    <button class="verchip" id="appVer" type="button" hidden title="Sprawdź, czy jest nowa wersja"></button>
     <div class="spacer"></div>
     <div class="tabs lay-only" role="tablist" aria-label="Widok">
       <button role="tab" id="tab2d" aria-selected="true" type="button">Widok 2D</button>
@@ -418,6 +426,12 @@ kbd{font:11px var(--f-mono);border:1px solid var(--line);border-bottom-width:2px
       <button class="btn pri" type="submit">Zapisz</button>
     </div>
   </form>
+</div>
+
+<div class="updbar" id="updBar" role="status" hidden>
+  <span><b id="updTitle">Nowa wersja</b> <span class="hint" id="updNotes"></span></span>
+  <button class="btn pri" id="updGo" type="button">Zainstaluj teraz</button>
+  <button class="btn" id="updLater" type="button">Później</button>
 </div>
 
 <div class="pres" id="presOv" hidden>

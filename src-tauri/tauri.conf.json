@@ -25,7 +25,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "publisher": "TwojaSzuflada.pl",
     "shortDescription": "Konfigurator produkcyjny",
     "icon": [
@@ -37,7 +39,21 @@
     "windows": {
       "nsis": {
         "installMode": "currentUser",
-        "languages": ["Polish"]
+        "languages": [
+          "Polish"
+        ]
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXkgRkVBNTAwQUM1NjZDMjUwQgpSV1FMSld4V3JBQ2wvbE1YZVg1SkNQTHExQUNzOC9welZqRWtKOFBlSUpKN2hlNnFiMVZ3ZSs3Sgo=",
+      "endpoints": [
+        "https://github.com/sznurek95-oss/konfigurator-produkcyjny/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

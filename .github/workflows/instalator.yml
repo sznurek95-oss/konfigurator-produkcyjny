@@ -29,6 +29,8 @@ jobs:
   windows:
     needs: testy
     runs-on: windows-latest
+    env:
+      V: 0.3.${{ github.run_number }}
     defaults:
       run:
         shell: bash
@@ -50,19 +52,41 @@ jobs:
       - name: Testy części na PC
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib
       - name: Budowanie instalatora
-        run: tauri build --config "{\"version\":\"0.3.${{ github.run_number }}\"}"
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          # bez klucza podpisu instalator nadal powstaje, tylko bez pliku aktualizacji
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then UPD=true; else UPD=false; echo "::warning::Brak sekretu TAURI_SIGNING_PRIVATE_KEY - ta wersja nie trafi do automatycznych aktualizacji"; fi
+          tauri build --config "{\"version\":\"$V\",\"bundle\":{\"createUpdaterArtifacts\":$UPD}}"
+      - name: Pliki do wydania
+        env:
+          NOTES: ${{ github.event.head_commit.message }}
+        run: |
+          OUT="$RUNNER_TEMP/wydanie"; mkdir -p "$OUT"
+          EXE=$(ls src-tauri/target/release/bundle/nsis/*-setup.exe | head -1)
+          NAME="Konfigurator-produkcyjny_${V}_x64-setup.exe"
+          cp "$EXE" "$OUT/$NAME"
+          if [ -f "$EXE.sig" ]; then
+            python tools/latest_json.py "$V" "$EXE.sig" \
+              "https://github.com/${{ github.repository }}/releases/download/v$V/$NAME" > "$OUT/latest.json"
+            cat "$OUT/latest.json"
+          fi
+          echo "OUT=$OUT" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
         with:
           name: instalator
-          path: src-tauri/target/release/bundle/nsis/*.exe
+          path: ${{ env.OUT }}/*
       - name: Publikacja w Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.3.${{ github.run_number }}
-          name: Konfigurator produkcyjny 0.3.${{ github.run_number }}
+          tag_name: v${{ env.V }}
+          name: Konfigurator produkcyjny ${{ env.V }}
           target_commitish: ${{ github.sha }}
           make_latest: true
           body: |
-            Instalator dla Windows: pobierz plik `…_x64-setup.exe` poniżej i uruchom.
+            Instalator dla Windows: pobierz plik `Konfigurator-produkcyjny_${{ env.V }}_x64-setup.exe` poniżej i uruchom.
+            Zainstalowana aplikacja zaktualizuje się sama (pasek „Dostępna wersja…” po uruchomieniu).
+
             Zmiana: ${{ github.event.head_commit.message }}
-          files: src-tauri/target/release/bundle/nsis/*.exe
+          files: ${{ env.OUT }}/*

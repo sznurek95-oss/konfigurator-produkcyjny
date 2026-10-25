@@ -15,6 +15,8 @@ window.__TAURI__ = {core: {invoke: async (cmd, args, opts) => {
   const rec = {cmd, opts: opts || null};
   if (args instanceof Uint8Array) rec.bytes = args.length; else rec.args = args || null;
   window.__calls.push(rec);
+  if (cmd === 'app_version') return '0.3.4';
+  if (cmd === 'update_check') return {version: '0.3.9', current: '0.3.4', notes: 'Nowa funkcja\ndruga linia'};
   if (cmd === 'slicer_status') return {found: true, path: 'C:\\Bambu Studio\\bambu-studio.exe'};
   if (cmd === 'save_job') return 'C:\\Dokumenty\\Konfigurator produkcyjny\\Zlecenia\\2026-01-01\\' + decodeURIComponent(opts.headers['x-name']);
   return null;
@@ -41,14 +43,22 @@ def main():
         pg.fill('#orderNo', ' ZAM 1234/A ')  # numer zamówienia: dopisany z przodu, znaki zabronione zamienione
         pg.click('#modelTabs >> text=Wieszak'); pg.wait_for_timeout(400)
         pg.click('#sgBambu'); pg.wait_for_timeout(800)
+        pg.wait_for_timeout(2000)  # sprawdzenie aktualizacji 2,5 s po starcie
+        assert pg.is_visible('#updBar'), 'brak paska aktualizacji'
+        assert 'v0.3.4 → v0.3.9' in pg.inner_text('#appVer'), pg.inner_text('#appVer')
+        assert 'Nowa funkcja' in pg.inner_text('#updBar') and 'druga' not in pg.inner_text('#updBar')
+        pg.click('#updGo'); pg.wait_for_timeout(200)
         calls = pg.evaluate('window.__calls')
         b.close()
+    upd = [c['cmd'] for c in calls if c['cmd'] in ('app_version', 'update_check', 'update_install')]
+    calls = [c for c in calls if c['cmd'] not in ('app_version', 'update_check', 'update_install')]
     seq = [c['cmd'] for c in calls]
     want = ['slicer_status', 'save_job', 'open_in_slicer', 'save_job', 'open_jobs_folder', 'save_job', 'open_in_slicer']
     names = [c['opts']['headers']['x-name'] for c in calls if c['cmd'] == 'save_job']
     ok_names = names == ['organizer_400x480.3mf', 'organizer_szuflada_400x480.zip', 'ZAM_1234-A_wieszak-na-grzejnik_wieszak-20-20_x4.3mf']
     if not ok_names: print('nazwy:', names)
-    ok = ok_names and seq == want and all(c.get('bytes', 1) > 1000 for c in calls if c['cmd'] == 'save_job') and not errs
+    if upd != ['app_version', 'update_check', 'update_install']: print('aktualizacje:', upd)
+    ok = upd == ['app_version', 'update_check', 'update_install'] and ok_names and seq == want and all(c.get('bytes', 1) > 1000 for c in calls if c['cmd'] == 'save_job') and not errs
     for c in calls: print(' ', c['cmd'], c.get('opts') or '', c.get('bytes', ''))
     print('OK: tryb aplikacji' if ok else f'BŁĄD: {seq} {errs}')
     sys.exit(0 if ok else 1)

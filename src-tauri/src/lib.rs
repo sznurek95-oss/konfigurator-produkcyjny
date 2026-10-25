@@ -2,11 +2,13 @@
 //! strona w przeglądarce nie potrafi sama:
 //!   • zapis plików do folderu zleceń: Dokumenty\Konfigurator produkcyjny\Zlecenia\RRRR-MM-DD\,
 //!   • otwarcie projektu w Bambu Studio (bez pomocnika Bambu-most.bat),
-//!   • otwarcie folderu zleceń w Eksploratorze.
+//!   • otwarcie folderu zleceń w Eksploratorze,
+//!   • aktualizacje: sprawdzenie nowej wersji w GitHub Releases i instalacja jednym kliknięciem.
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::ipc::{InvokeBody, Request};
 use tauri::{AppHandle, Manager};
+use tauri_plugin_updater::UpdaterExt;
 
 fn jobs_root(app: &AppHandle) -> Result<PathBuf, String> {
     let docs = app.path().document_dir().map_err(|e| format!("brak folderu Dokumenty: {e}"))?;
@@ -178,10 +180,52 @@ fn open_jobs_folder(app: AppHandle) -> Result<(), String> {
     open_default(&root)
 }
 
+#[derive(serde::Serialize)]
+struct UpdateInfo {
+    version: String,
+    current: String,
+    notes: Option<String>,
+}
+
+#[tauri::command]
+fn app_version(app: AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+/// Sprawdza, czy w Releases jest nowsza wersja. None = aktualna.
+#[tauri::command]
+async fn update_check(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    let found = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?;
+    Ok(found.map(|u| UpdateInfo { version: u.version.clone(), current: u.current_version.clone(), notes: u.body.clone() }))
+}
+
+/// Pobiera i instaluje nową wersję (instalator w trybie z paskiem postępu), potem uruchamia aplikację ponownie.
+#[tauri::command]
+async fn update_install(app: AppHandle) -> Result<(), String> {
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "brak nowej wersji".to_string())?;
+    update.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
+    app.restart();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![save_job, slicer_status, open_in_slicer, open_jobs_folder])
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![
+            save_job,
+            slicer_status,
+            open_in_slicer,
+            open_jobs_folder,
+            app_version,
+            update_check,
+            update_install
+        ])
         .run(tauri::generate_context!())
         .expect("nie udało się uruchomić aplikacji");
 }

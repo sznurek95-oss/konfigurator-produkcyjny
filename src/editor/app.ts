@@ -1695,6 +1695,32 @@ load(); bindSettings(); getDl(); refresh();
   o.addEventListener('input', sync); o.addEventListener('keydown', e => { if(e.key === 'Enter') o.blur(); });
   x.onclick = () => { o.value = ''; sync(); o.focus(); }; sync(); }
 if(!inClaude){ pingHelper(); if(!desktop.on) setInterval(pingHelper, 8000); }
+/* ---------- aktualizacje (aplikacja na PC) ---------- */
+// Przy starcie aplikacja sprawdza GitHub Releases; nowa wersja = pasek „Zainstaluj teraz”.
+// Kliknięcie numeru wersji w nagłówku sprawdza ponownie na żądanie.
+async function checkUpdate(manual){
+  const vb = $('#appVer');
+  try{
+    const u = await desktop.checkUpdate();
+    if(!u){ if(manual) toast('Masz najnowszą wersję.'); return; }
+    vb.textContent = `v${u.current} → v${u.version}`; vb.classList.add('new');
+    $('#updTitle').textContent = `Dostępna wersja ${u.version}`;
+    $('#updNotes').textContent = u.notes ? '— ' + String(u.notes).split('\n')[0].slice(0, 120) : '';
+    $('#updBar').hidden = false;
+  }catch(e){ if(manual) toast('Nie udało się sprawdzić aktualizacji: ' + e); }
+}
+if(desktop.on){
+  const vb = $('#appVer'); vb.hidden = false;
+  desktop.version().then(v => { if(!vb.classList.contains('new')) vb.textContent = 'v' + v; }).catch(() => {});
+  vb.onclick = () => checkUpdate(true);
+  $('#updLater').onclick = () => { $('#updBar').hidden = true; };
+  $('#updGo').onclick = async () => {
+    const b = $('#updGo'); b.disabled = true; b.textContent = 'Pobieram…'; $('#updLater').hidden = true;
+    try{ await desktop.installUpdate(); }
+    catch(e){ toast('Aktualizacja nie powiodła się: ' + e); b.disabled = false; b.textContent = 'Spróbuj ponownie'; $('#updLater').hidden = false; }
+  };
+  setTimeout(() => checkUpdate(false), 2500);
+}
 if(desktop.on){ document.body.classList.add('desktop'); const jb = $('#jobsBtn'); if(jb){ jb.hidden = false; jb.onclick = () => desktop.openFolder().catch(e => toast('Nie udało się otworzyć folderu: ' + e)); } }
 if(getModel(activeModel()).kind !== 'layout') applyModel(activeModel());
 else if(!state.drawer) openDrawer();
