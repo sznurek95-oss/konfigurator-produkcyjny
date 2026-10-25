@@ -1711,7 +1711,12 @@ async function checkUpdate(manual){
 }
 if(desktop.on){
   const vb = $('#appVer'); vb.hidden = false;
-  desktop.version().then(v => { if(!vb.classList.contains('new')) vb.textContent = 'v' + v; }).catch(() => {});
+  desktop.version().then(v => {
+    if(!vb.classList.contains('new')) vb.textContent = 'v' + v;
+    // po aktualizacji: krótka informacja, że nowa wersja działa
+    let prev = ''; try{ prev = localStorage.getItem('konfigurator-wersja') || ''; localStorage.setItem('konfigurator-wersja', v); }catch(e){}
+    if(prev && prev !== v) setTimeout(() => toast(`Zaktualizowano do wersji ${v}.`), 800);
+  }).catch(() => {});
   vb.onclick = () => checkUpdate(true);
   $('#updLater').onclick = () => { $('#updBar').hidden = true; };
   $('#updGo').onclick = async () => {
