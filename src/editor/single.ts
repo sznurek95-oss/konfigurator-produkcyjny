@@ -225,5 +225,12 @@ function renderFormHeader() {
   $('#sgDelSaved').hidden = !s.saved.some(x => x.id === s.preset);
 }
 /** Pokazuje edytor dla aktywnego modelu (wywołuje aplikacja po przełączeniu). */
+/** Dane do trybu prezentacji (realistyczne zdjęcie): bryła, kolor, otoczenie. null = błędne parametry. */
+export function presData() {
+  const { m, s } = current(); if (m.validate(s.params)) return null;
+  const spec = m.spec(s.params, { drawerH: null, tol: 0, label: false });
+  return { m, spec, mesh: m.mesh(spec), color: s.color, name: s.params.name || m.name, file: fileBase(),
+    scene: m.scene3d ? m.scene3d(spec) : { cylinders: [] } };
+}
 export function showSingle() { renderForm(); update(); }
 export function refreshSingle() { if (!$('#singleView').hidden) update(false); }

@@ -350,7 +350,11 @@ kbd{font:11px var(--f-mono);border:1px solid var(--line);border-bottom-width:2px
           <button class="btn" id="sg3mf" type="button">Pobierz 3MF</button>
           <button class="btn" id="sgStl" type="button">Pobierz STL</button>
         </div>
-        <button id="sgShoot" hidden></button>
+      </section>
+      <section class="card">
+        <h2>Zdjęcia do sklepu</h2>
+        <p class="hint" style="margin:0 0 8px">Realistyczny render wieszaka na grzejniku — tło, światło, ślady warstw druku, zdjęcie PNG w rozmiarze do sklepu.</p>
+        <button class="btn pri" id="sgShoot" type="button" style="width:100%">Tryb prezentacji</button>
       </section>
     </aside>
     <main class="stage">
@@ -424,7 +428,7 @@ kbd{font:11px var(--f-mono);border:1px solid var(--line);border-bottom-width:2px
     <p class="hint" style="margin:0">Realistyczny podgląd do zdjęć produktowych. Obracaj myszą, kółkiem przybliżaj, prawym przyciskiem przesuwaj.</p>
     <div class="field"><label>Ujęcie</label><div class="segs" id="pShot">
       <button type="button" data-v="hero">Pod kątem</button><button type="button" data-v="top">Z góry</button><button type="button" data-v="front">Z przodu</button><button type="button" data-v="detail">Detal</button></div></div>
-    <div class="field"><label for="pDrawer">Szuflada</label><select id="pDrawer" style="font-family:var(--f-body)">
+    <div class="field"><label for="pDrawer" id="pEnvLbl">Szuflada</label><select id="pDrawer" style="font-family:var(--f-body)">
       <option value="oak">Dąb naturalny</option><option value="walnut">Orzech</option><option value="white">Biały laminat</option><option value="anthracite">Antracyt</option><option value="none">Bez szuflady (same moduły)</option></select></div>
     <div class="field"><label for="pBg">Tło</label><select id="pBg" style="font-family:var(--f-body)">
       <option value="#F4F4F2">Białe studio</option><option value="#DADCDA">Jasnoszare</option><option value="#E9E1D5">Ciepły beż</option><option value="#2A2C2E">Ciemne</option><option value="transparent">Przezroczyste (PNG bez tła)</option></select></div>

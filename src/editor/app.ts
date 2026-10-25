@@ -3,7 +3,7 @@ import { getModel, DEFAULT_MODEL } from '../core/model.js';
 import { fmt, esc, slug } from '../core/format.js';
 import { PRESETS, presetFull } from '../models/wklad-szuflada.js';
 import '../models/index.js';
-import { mountSingle, renderModelTabs, showSingle, refreshSingle, activeModel } from './single.js';
+import { mountSingle, renderModelTabs, showSingle, refreshSingle, activeModel, presData } from './single.js';
 import { COLORS, MATS, FLOW, ROSA, ROSA_CF, SERIES, findFil, rosaName, seriesOf } from '../materials/rosa3d.js';
 import { stl } from '../export/stl.js';
 import { zip } from '../export/zip.js';
@@ -1303,7 +1303,15 @@ $('#fApply').onclick = () => {
 
 
 /* ---------- tryb prezentacji: realistyczny render do zdjęć produktowych ---------- */
-const pres = {open:false, shot:'hero', drawer:'oak', bg:'#F4F4F2', la:35, le:55, layers:true, ao:true, size:'2000x2000', wm:'', P:null};
+const pres = {open:false, shot:'hero', drawer:'oak', bg:'#F4F4F2', la:35, le:55, layers:true, ao:true, size:'2000x2000', wm:'', P:null,
+  subj:'layout', rad:'white', one:null, keep:{}};  // subj: 'layout' (szuflada) albo 'single' (pojedynczy model, np. wieszak)
+const isOne = () => pres.subj === 'single';
+// otoczenie pojedynczego modelu: rurki grzejnika drabinkowego
+const RADS = {
+  white:{color:'#F3F3EF', rough:.36, clear:.55, metal:0, env:.45},
+  anthracite:{color:'#3B3E42', rough:.48, clear:.35, metal:0, env:.4},
+  chrome:{color:'#E4E7EA', rough:.07, clear:0, metal:1, env:1.1},
+};
 const DRAWERS = {
   oak:{base:'#C9A27A', dark:'#99714C', light:'#DDBB92', rough:.62, grain:true},
   walnut:{base:'#6B4A33', dark:'#45301F', light:'#87624A', rough:.55, grain:true},
@@ -1332,8 +1340,11 @@ function woodTex(kind){
 }
 // materiał PLA z wypukłymi ścieżkami warstw (0,2 mm) na ściankach i liniami górnej warstwy
 const presMats = new Map();
-function plaMat(hex){
-  const key = hex + '|' + pres.layers; if(presMats.has(key)) return presMats.get(key);
+// axis: kierunek narastania warstw w scenie — 'y' (moduły szuflady) albo 'z' (model drukowany na boku)
+function plaMat(hex, axis = 'y'){
+  const key = hex + '|' + pres.layers + '|' + axis; if(presMats.has(key)) return presMats.get(key);
+  const A = axis === 'z' ? {c:'z', up:'vec4(0.0, 0.0, 1.0, 0.0)', diag:'(vWP.x + vWP.y)', dv:'vec4(0.7071, -0.7071, 0.0, 0.0)'}
+                         : {c:'y', up:'vec4(0.0, 1.0, 0.0, 0.0)', diag:'(vWP.x + vWP.z)', dv:'vec4(0.7071, 0.0, -0.7071, 0.0)'};
   const matte = (findFil(hex) || {}).matte;
   const m = new THREE.MeshPhysicalMaterial({color:new THREE.Color(hex).convertSRGBToLinear(), metalness:0,
     ...(matte ? {roughness:.88, clearcoat:0, envMapIntensity:.2} : {roughness:.42, clearcoat:.15, clearcoatRoughness:.35, envMapIntensity:.18})});
@@ -1345,22 +1356,22 @@ function plaMat(hex){
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
       if(${on}.0 > 0.5){
         vec3 wn = inverseTransformDirection(normal, viewMatrix);
-        float side = 1.0 - smoothstep(0.55, 0.9, abs(wn.y));
-        float t = vWP.y / 0.2, fw = fwidth(t);
+        float side = 1.0 - smoothstep(0.55, 0.9, abs(wn.${A.c}));
+        float t = vWP.${A.c} / 0.2, fw = fwidth(t);
         float a = ${amp.toFixed(2)} * (1.0 - smoothstep(0.35, 0.8, fw)) * side;
-        vec3 upV = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+        vec3 upV = normalize((viewMatrix * ${A.up}).xyz);
         normal = normalize(normal + upV * sin(t * 6.2831853) * a);
         // nierówności co kilka warstw (lekkie falowanie osi Z) — widoczne także z dalszej odległości
-        float t3 = vWP.y / 0.8, fw3 = fwidth(t3);
-        float n3 = sin(t3 * 6.2831853 + sin(vWP.y * 0.37) * 2.0) * 0.6 + sin(vWP.y * 2.9 + 1.3) * 0.4;
+        float t3 = vWP.${A.c} / 0.8, fw3 = fwidth(t3);
+        float n3 = sin(t3 * 6.2831853 + sin(vWP.${A.c} * 0.37) * 2.0) * 0.6 + sin(vWP.${A.c} * 2.9 + 1.3) * 0.4;
         normal = normalize(normal + upV * n3 * 0.07 * (1.0 - smoothstep(0.3, 0.9, fw3)) * side);
-        float t2 = (vWP.x + vWP.z) / 0.42, fw2 = fwidth(t2);
+        float t2 = ${A.diag} / 0.42, fw2 = fwidth(t2);
         float a2 = 0.10 * (1.0 - smoothstep(0.2, 0.55, fw2)) * (1.0 - side);
-        vec3 dV = normalize((viewMatrix * vec4(0.7071, 0.0, -0.7071, 0.0)).xyz);
+        vec3 dV = normalize((viewMatrix * ${A.dv}).xyz);
         normal = normalize(normal + dV * sin(t2 * 6.2831853) * a2);
       }`);
   };
-  m.customProgramCacheKey = () => 'pla' + on + amp;
+  m.customProgramCacheKey = () => 'pla' + on + amp + axis;
   presMats.set(key, m); return m;
 }
 function presInit(){
@@ -1408,12 +1419,14 @@ function presSetSize(w, h, pr){
   if(P.composer){ P.composer.setPixelRatio ? P.composer.setPixelRatio(pr) : 0; P.composer.setSize(w, h); }
 }
 function presBounds(){
+  if(isOne()){ const g = pres.one.spec; return {x0:0, x1:g.size.w, y0:0, y1:g.size.d, z0:0, z1:g.W}; }
   const D = state.drawer, t = pres.drawer === 'none' ? 0 : 16;
   return {x0:-t, x1:D.w + t, z0:-t, z1:D.d + t + (pres.drawer === 'none' ? 0 : 18), y0:pres.drawer === 'none' ? 0 : -10, y1:D.h + 12};
 }
 function presBuild(){
   const P = pres.P, D = state.drawer, g = P.group;
   while(g.children.length){ const c = g.children.pop(); if(c.geometry && c.userData.own) c.geometry.dispose(); }
+  if(isOne()){ presBuildOne(); return; }
   const none = pres.drawer === 'none', T16 = 16, base = none ? 0 : -8;
   // moduły
   for(const it of state.items){
@@ -1463,6 +1476,37 @@ function presBuild(){
   ground.rotation.x = -Math.PI/2; ground.position.set(D.w/2, none ? -0.01 : -8.01, D.d/2); ground.receiveShadow = true; g.add(ground);
   presBg(); presLight(); pres.dirty = true;
 }
+// pojedynczy model: wieszak na rurce grzejnika drabinkowego, za nim ściana (tylko cień, w kolorze tła)
+function presBuildOne(){
+  const P = pres.P, g = P.group, o = pres.one, B = presBounds();
+  const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.BufferAttribute(o.mesh.pos, 3)); bg.computeVertexNormals();
+  const hook = new THREE.Mesh(bg, plaMat(o.color, 'z')); hook.userData.own = true; hook.castShadow = hook.receiveShadow = true; g.add(hook);
+  const cyl = o.scene.cylinders || [], dark = pres.bg === '#2A2C2E', zc = (B.z0 + B.z1)/2;
+  let wallX = B.x0 - 40;
+  if(cyl.length && pres.rad !== 'none'){
+    const R = RADS[pres.rad];
+    const mat = new THREE.MeshPhysicalMaterial({color:new THREE.Color(R.color).convertSRGBToLinear(), roughness:R.rough, metalness:R.metal,
+      clearcoat:R.clear, clearcoatRoughness:.18, envMapIntensity:R.env});
+    // rurki z modelu + kolejne w tym samym rozstawie (grzejnik drabinkowy), długie — wychodzą poza kadr
+    const ys = cyl.map(c => c.y), pitch = cyl.length > 1 ? Math.abs(ys[1] - ys[0]) : 0, top = Math.max(...ys), bot = Math.min(...ys);
+    const all = cyl.map(c => ({...c}));
+    if(pitch){ for(let k=1;k<=2;k++){ all.push({...cyl[0], y: top + k*pitch}); all.push({...cyl[0], y: bot - k*pitch}); } }
+    // ujęcie z boku: krótkie odcinki rurek (przekrój), żeby nie zasłaniały profilu wieszaka
+    const len = pres.shot === 'top' ? (B.z1 - B.z0) + 70 : 1400;
+    pres.stubs = pres.shot === 'top';
+    for(const c of all){
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(c.r, c.r, len, 96, 1), mat); m.userData.own = true;
+      m.rotation.x = Math.PI/2; m.position.set(c.x, c.y, zc); m.castShadow = m.receiveShadow = true; g.add(m);
+    }
+    wallX = Math.min(...cyl.map(c => c.x - c.r)) - 45;
+  }
+  // bez grzejnika: sam wieszak, bez ściany i cienia — czysty wycinek produktu
+  if(pres.rad === 'none' || !cyl.length){ presBg(); presLight(); pres.dirty = true; return; }
+  const wm = new THREE.ShadowMaterial({opacity: dark ? .32 : .12});
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), wm); wall.userData.own = true;
+  wall.rotation.y = Math.PI/2; wall.position.set(wallX, (B.y0 + B.y1)/2, zc); wall.receiveShadow = true; g.add(wall);
+  presBg(); presLight(); pres.dirty = true;
+}
 function presBg(){
   const P = pres.P, tr = pres.bg === 'transparent', useComp = pres.ao && P.composer && !tr;
   P.scene.background = tr ? null : (useComp ? new THREE.Color(pres.bg).convertSRGBToLinear() : new THREE.Color(pres.bg));
@@ -1471,6 +1515,17 @@ function presBg(){
   const dark = pres.bg === '#2A2C2E'; $('#presWm').style.color = dark ? 'rgba(255,255,255,.85)' : 'rgba(27,33,30,.78)';
 }
 function presLight(){
+  if(isOne()){
+    const P = pres.P, B = presBounds(), S = Math.max(B.x1 - B.x0, B.y1 - B.y0, B.z1 - B.z0);
+    const c = new THREE.Vector3((B.x0 + B.x1)/2, (B.y0 + B.y1)/2, (B.z0 + B.z1)/2);
+    // kąt 0° = światło z boku (oś z), 90° = z przodu, od strony pokoju
+    const a = pres.la*Math.PI/180, e = pres.le*Math.PI/180, r = S*6;
+    P.key.position.set(c.x + Math.abs(Math.sin(a))*Math.cos(e)*r + S*0.6, c.y + Math.sin(e)*r, c.z + Math.cos(a)*Math.cos(e)*r);
+    P.key.target.position.copy(c); P.key.target.updateMatrixWorld();
+    const sc = P.key.shadow.camera, ext = S*2.6; sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.near = r*0.2; sc.far = r*2.5; sc.updateProjectionMatrix();
+    P.fillL.position.set(c.x + r, c.y + r*0.3, c.z - Math.cos(a)*r);
+    pres.dirty = true; return;
+  }
   const P = pres.P, D = state.drawer, S = Math.max(D.w, D.d), cx = D.w/2, cz = D.d/2;
   const a = pres.la*Math.PI/180, e = pres.le*Math.PI/180, r = S*2.2;
   P.key.position.set(cx + Math.sin(a)*Math.cos(e)*r, Math.sin(e)*r, cz + Math.cos(a)*Math.cos(e)*r);
@@ -1481,6 +1536,7 @@ function presLight(){
 }
 function presShot(kind){
   pres.shot = kind; document.querySelectorAll('#pShot button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === kind));
+  if(isOne()){ presShotOne(kind); return; }
   const P = pres.P, D = state.drawer, B = presBounds();
   let target = new THREE.Vector3((B.x0 + B.x1)/2, D.h*0.3, (B.z0 + B.z1)/2);
   const rad = Math.hypot(B.x1 - B.x0, B.y1 - B.y0, B.z1 - B.z0)/2;
@@ -1492,6 +1548,23 @@ function presShot(kind){
   const dist = rad / Math.sin(fov*Math.PI/360) * k, A = az*Math.PI/180, E = el*Math.PI/180;
   P.camera.position.set(target.x + Math.sin(A)*Math.cos(E)*dist, target.y + Math.sin(E)*dist, target.z + Math.cos(A)*Math.cos(E)*dist);
   P.camera.near = Math.max(2, dist*0.08); P.camera.far = dist*4; P.camera.updateProjectionMatrix();
+  if(P.controls){ P.controls.target.copy(target); P.controls.update(); } else P.camera.lookAt(target);
+  presAO(); pres.dirty = true;
+}
+function presShotOne(kind){
+  if((kind === 'top') !== !!pres.stubs) presBuild();
+  const P = pres.P, B = presBounds(), o = pres.one;
+  let target = new THREE.Vector3((B.x0 + B.x1)/2, (B.y0 + B.y1)/2, (B.z0 + B.z1)/2);
+  const rad = Math.hypot(B.x1 - B.x0, B.y1 - B.y0, B.z1 - B.z0)/2;
+  // azymut 0° = z boku (widać profil), 90° = od frontu (z pokoju)
+  let az = 52, el = 16, fov = 26, k = 1.3;
+  if(kind === 'top'){ az = 0; el = 2; fov = 24; k = 1.2; }
+  if(kind === 'front'){ az = 72; el = 20; fov = 26; k = 1.35; }
+  if(kind === 'detail'){ az = 38; el = 26; fov = 24; k = 0.62; target = new THREE.Vector3(o.spec.off[0], o.spec.off[1], (B.z0 + B.z1)/2); }
+  P.camera.fov = fov;
+  const dist = rad / Math.sin(fov*Math.PI/360) * k, A = az*Math.PI/180, E = el*Math.PI/180;
+  P.camera.position.set(target.x + Math.sin(A)*Math.cos(E)*dist, target.y + Math.sin(E)*dist, target.z + Math.cos(A)*Math.cos(E)*dist);
+  P.camera.near = Math.max(1, dist*0.05); P.camera.far = dist*30; P.camera.updateProjectionMatrix();
   if(P.controls){ P.controls.target.copy(target); P.controls.update(); } else P.camera.lookAt(target);
   presAO(); pres.dirty = true;
 }
@@ -1513,18 +1586,44 @@ function presLoop(){
 }
 const presDirty = () => { pres.dirty = true; };
 function presWm(){ $('#presWm').textContent = pres.wm; }
-function openPres(){
-  if(!state.drawer || !state.items.length){ toast('Ułóż najpierw moduły w szufladzie.'); return; }
+// ustawienia panelu zależne od tego, co fotografujemy
+const PRES_UI = {
+  layout:{env:'Szuflada', shots:{hero:'Pod kątem', top:'Z góry', front:'Z przodu', detail:'Detal'},
+    opts:[['oak','Dąb naturalny'],['walnut','Orzech'],['white','Biały laminat'],['anthracite','Antracyt'],['none','Bez szuflady (same moduły)']]},
+  single:{env:'Grzejnik', shots:{hero:'Pod kątem', top:'Z boku', front:'Z przodu', detail:'Zatrzask'},
+    opts:[['white','Biały'],['anthracite','Antracyt'],['chrome','Chrom'],['none','Bez grzejnika (sam wieszak)']]},
+};
+function presUi(){
+  const u = PRES_UI[pres.subj];
+  $('#pEnvLbl').textContent = u.env;
+  $('#pDrawer').innerHTML = u.opts.map(([v,n]) => `<option value="${v}">${n}</option>`).join('');
+  document.querySelectorAll('#pShot button').forEach(b => b.textContent = u.shots[b.dataset.v]);
+  $('#pDrawer').value = isOne() ? pres.rad : pres.drawer;
+}
+function openPres(subj = 'layout'){
+  if(subj === 'layout' && (!state.drawer || !state.items.length)){ toast('Ułóż najpierw moduły w szufladzie.'); return; }
+  if(subj === 'single'){
+    pres.one = presData(); if(!pres.one){ toast('Popraw parametry modelu.'); return; }
+    // dopóki nie wybrano grzejnika ręcznie: jasny wieszak na antracytowym, ciemny na białym (kontrast na zdjęciu)
+    if(!pres.radSet){ const c = new THREE.Color(pres.one.color); pres.rad = (0.2126*c.r + 0.7152*c.g + 0.0722*c.b) > 0.55 ? 'anthracite' : 'white'; }
+  }
+  // każdy rodzaj ma własne ujęcie i światło — przełączanie nie psuje ustawień drugiego
+  if(pres.subj !== subj){
+    pres.keep[pres.subj] = {shot:pres.shot, la:pres.la, le:pres.le};
+    Object.assign(pres, pres.keep[subj] || (subj === 'single' ? {shot:'hero', la:55, le:40} : {shot:'hero', la:35, le:55}));
+    pres.subj = subj;
+  }
   $('#presOv').hidden = false; pres.open = true;
   if(!presInit()){ $('#presOv').hidden = true; pres.open = false; return; }
-  $('#pDrawer').value = pres.drawer; $('#pBg').value = pres.bg; $('#pLightA').value = pres.la; $('#pLightE').value = pres.le;
+  presUi(); $('#pBg').value = pres.bg; $('#pLightA').value = pres.la; $('#pLightE').value = pres.le;
   $('#pLayers').checked = pres.layers; $('#pAO').checked = pres.ao; $('#pSize').value = pres.size; $('#pWm').value = pres.wm;
   $('#pAO').disabled = !pres.P.composer;
   presLayout(); presBuild(); presShot(pres.shot); presWm(); presInfo(); presLoop();
 }
-function closePres(){ pres.open = false; $('#presOv').hidden = true; if(view === '3d') rebuild3d(); }
+function closePres(){ pres.open = false; $('#presOv').hidden = true; if(isOne()) refreshSingle(); else if(view === '3d') rebuild3d(); }
 function presInfo(){
   const {w, h} = presAspect(), cols = new Set();
+  if(isOne()){ $('#pInfo').textContent = `Zdjęcie ${w} × ${h} px, renderowane z podwójną rozdzielczością i zmniejszane, żeby krawędzie były gładkie. Kolor: ${rosaName(pres.one.color) || 'własny kolor'}.`; return; }
   state.items.forEach(i => { const t = tpl(i.tid); cols.add(rosaName(state.settings.uniOn ? state.settings.uniColor : t.color) || 'własny kolor'); });
   if(state.settings.tone2On) cols.add((rosaName(state.settings.tone2Color) || 'własny kolor') + ' (pas)');
   $('#pInfo').textContent = `Zdjęcie ${w} × ${h} px, renderowane z podwójną rozdzielczością i zmniejszane, żeby krawędzie były gładkie. Kolory: ${[...cols].join(', ')}.`;
@@ -1549,16 +1648,17 @@ async function presSnapshot(){
     }
     presSetSize(size0.x, size0.y, pr0); presRender();
     const blob = await new Promise(r => out.toBlob(r, 'image/png'));
-    const D = state.drawer, name = `zdjecie_organizer_${D.w}x${D.d}_${pres.shot}_${w}x${h}.png`;
+    const D = state.drawer, name = isOne() ? `zdjecie_${pres.one.file}_${pres.shot}_${w}x${h}.png` : `zdjecie_organizer_${D.w}x${D.d}_${pres.shot}_${w}x${h}.png`;
     await offer(name, blob, true);
   }catch(e){ toast('Nie udało się wykonać zdjęcia: ' + (e && e.message || e)); presLayout(); }
   finally{ btn.disabled = false; $('#presBusy').hidden = true; }
 }
-$('#presBtn').onclick = openPres;
+$('#presBtn').onclick = () => openPres('layout');
+$('#sgShoot').onclick = () => openPres('single');
 $('#presClose').onclick = closePres;
 document.addEventListener('keydown', e => { if(pres.open && e.key === 'Escape') closePres(); });
 $('#pShot').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if(b) presShot(b.dataset.v); });
-$('#pDrawer').addEventListener('change', e => { pres.drawer = e.target.value; presBuild(); presShot(pres.shot); });
+$('#pDrawer').addEventListener('change', e => { if(isOne()){ pres.rad = e.target.value; pres.radSet = true; } else pres.drawer = e.target.value; presBuild(); presShot(pres.shot); });
 $('#pBg').addEventListener('change', e => { pres.bg = e.target.value; presBuild(); });
 $('#pLightA').addEventListener('input', e => { pres.la = +e.target.value; presLight(); });
 $('#pLightE').addEventListener('input', e => { pres.le = +e.target.value; presLight(); });

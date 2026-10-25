@@ -50,9 +50,17 @@ with sync_playwright() as p:
         with pg.expect_download(): pg.click('#sg3mf')
         with pg.expect_download(): pg.click('#sgStl')
         pg.click("#sgTabs [data-v='3d']"); pg.wait_for_timeout(600)
+        pg.click('#sgShoot'); pg.wait_for_timeout(2500)  # tryb prezentacji wieszaka
+        assert pg.inner_text('#pEnvLbl').lower() == 'grzejnik', pg.inner_text('#pEnvLbl')
+        for env, shot in (('chrome', 'top'), ('none', 'detail')):
+            pg.select_option('#pDrawer', env); pg.click(f'#pShot [data-v={shot}]'); pg.wait_for_timeout(500)
+        pg.select_option('#pSize', '1080x1080')
+        with pg.expect_download(timeout=300000) as d: pg.click('#pShoot')
+        assert d.value.suggested_filename.startswith('zdjecie_wieszak'), d.value.suggested_filename
+        pg.click('#presClose')
         pg.click('#modelTabs [data-m=wklad-szuflada]'); pg.wait_for_timeout(300)
         assert pg.eval_on_selector_all('#svg .it', 'e=>e.length') > 5
-    step('wieszak: parametry, 3MF, STL, 3D, powrót do szuflady', hook)
+    step('wieszak: parametry, 3MF, STL, 3D, zdjęcie, powrót do szuflady', hook)
     pg.reload(); pg.wait_for_timeout(500)
     step('odczyt po odświeżeniu', lambda: None if pg.eval_on_selector_all('#svg .it', 'e=>e.length') > 5 else (_ for _ in ()).throw(Exception('układ nie wczytany')))
     b.close()
