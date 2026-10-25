@@ -28,6 +28,15 @@ with sync_playwright() as p:
         pg.click('#fillBtn'); pg.check('input[name=fArea][value=all]'); pg.fill('[data-q=p4]', '2'); pg.wait_for_timeout(500)
         assert '100%' in pg.inner_text('#fStats'); pg.click('#fApply')
     step('automatyczne wypełnienie 100%', fill)
+    def kits():
+        pg.click('#kitBtn'); pg.wait_for_timeout(200)
+        assert pg.locator('#kitList .kititem').count() == 9
+        assert pg.locator('#kitPrev svg').count() == 1
+        pg.click('#kitList [data-k=sztucce]'); pg.click('#kitApply'); pg.wait_for_timeout(300)
+        assert pg.locator('.it').count() >= 3
+        assert 'nachodzi' not in pg.inner_text('body') and 'wystaje' not in pg.inner_text('body')
+        pg.click('#kitBtn'); pg.click('#kitList [data-k=przyprawy]'); pg.click('#kitApply'); pg.wait_for_timeout(200)
+    step('gotowe układy szuflad', kits)
     def lay():
         pg.click('#layoutsBtn'); pg.fill('#lName', 'Test'); pg.click('#formLay button[type=submit]'); pg.click('#lClose')
     step('zapis układu', lay)
@@ -59,10 +68,10 @@ with sync_playwright() as p:
         assert d.value.suggested_filename.startswith('zdjecie_wieszak'), d.value.suggested_filename
         pg.click('#presClose')
         pg.click('#modelTabs [data-m=wklad-szuflada]'); pg.wait_for_timeout(300)
-        assert pg.eval_on_selector_all('#svg .it', 'e=>e.length') > 5
+        assert pg.eval_on_selector_all('#svg .it', 'e=>e.length') > 3
     step('wieszak: parametry, 3MF, STL, 3D, zdjęcie, powrót do szuflady', hook)
     pg.reload(); pg.wait_for_timeout(500)
-    step('odczyt po odświeżeniu', lambda: None if pg.eval_on_selector_all('#svg .it', 'e=>e.length') > 5 else (_ for _ in ()).throw(Exception('układ nie wczytany')))
+    step('odczyt po odświeżeniu', lambda: None if pg.eval_on_selector_all('#svg .it', 'e=>e.length') > 3 else (_ for _ in ()).throw(Exception('układ nie wczytany')))
     b.close()
 ok = True
 for name, good, e in steps:

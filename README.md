@@ -30,6 +30,17 @@ Pole **Nr zamówienia** w nagłówku: wpisany numer trafia na początek nazwy ka
 (STL, 3MF, ZIP, PDF i projekt wysyłany do Bambu Studio), np. `4471_organizer_400x480.3mf`.
 Puste pole = nazwy jak dotąd. Zapisy układów (.json) i zdjęcia z trybu prezentacji go nie dostają.
 
+## Gotowe układy szuflad kuchennych
+
+Przycisk **Gotowe układy** liczy układ dla wymiarów aktualnej szuflady i stołu drukarki (Ustawienia → stół):
+sztućce, sztućce + przybory, przybory, przyprawy, garnki i pokrywki, talerze i miski, zapasy, folie i torebki,
+drobiazgi. Moduły zawsze wypełniają szufladę w 100% (co do 0,1 mm), a liczba i szerokość przegródek wynika z wymiarów
+przedmiotów (nóż 24,5 cm, czerpak łyżki 5–6 cm, słoiczek przypraw 5,4 cm, puszka 8 cm, talerz ⌀ 27 cm…).
+Moduły są dzielone na kawałki mieszczące się na stole; długie przedmioty leżą w niskich korytkach przechodzących przez styk.
+Układ, który się nie mieści (za wąska, płytka albo niska szuflada), jest szary z powodem. Obszar, którego nie da się
+wydrukować jako moduł (stos talerzy ⌀ 27 cm przy stole 256 mm), zostaje oznaczony jako „wolne miejsce”.
+Silnik: `src/layout/gotowe.ts`, testy: `tests/uklady.test.js` (szczelne pokrycie na siatce wymiarów i na losowych szufladach).
+
 ## Jak zbudować
 
 Potrzebne: Python 3 i TypeScript (`tsc`).
@@ -65,7 +76,7 @@ Trzy skrypty Pythona wymagają Playwright z przeglądarką Chromium.
 | `src/core/` | opis modelu (`defineModel`), rejestr modeli, formatowanie liczb |
 | `src/geometry/` | budowa szczelnych brył (`heightMesh`), czcionka do napisów |
 | `src/models/` | jeden plik na produkt + lista modeli `index.ts` |
-| `src/layout/` | automatyczne wypełnianie obszaru w 100% |
+| `src/layout/` | automatyczne wypełnianie obszaru w 100% (`autofill.ts`) i gotowe układy szuflad kuchennych (`gotowe.ts`) |
 | `src/materials/` | kolory Rosa3D, gęstości materiałów |
 | `src/export/` | STL, 3MF (także dwukolorowy), ZIP, PDF |
 | `src/editor/` | interfejs: `app.ts` (szuflada, prezentacja) i `single.ts` (edytor pojedynczego modelu) |

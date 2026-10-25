@@ -2,6 +2,7 @@
 import { getModel, DEFAULT_MODEL } from '../core/model.js';
 import { fmt, esc, slug } from '../core/format.js';
 import { PRESETS, presetFull } from '../models/wklad-szuflada.js';
+import { KITS, ZONES, WALL, buildKit } from '../layout/gotowe.js';
 import '../models/index.js';
 import { mountSingle, renderModelTabs, showSingle, refreshSingle, activeModel, presData } from './single.js';
 import { COLORS, MATS, FLOW, ROSA, ROSA_CF, SERIES, findFil, rosaName, seriesOf } from '../materials/rosa3d.js';
@@ -390,7 +391,7 @@ function duplicate(it){
 }
 function removeItem(it){ state.items = state.items.filter(i => i !== it); sel = null; commit(); }
 document.addEventListener('keydown', e => {
-  if(e.target.closest('input,select,textarea') || !$('#ovTpl').hidden || !$('#ovDrawer').hidden || !$('#ovLay').hidden || !$('#ovFill').hidden) return;
+  if(e.target.closest('input,select,textarea') || !$('#ovTpl').hidden || !$('#ovDrawer').hidden || !$('#ovLay').hidden || !$('#ovFill').hidden || !$('#ovKit').hidden) return;
   const it = selItem(); if(!it) return;
   const st = e.shiftKey ? 10 : state.settings.snap, D = state.drawer, f = fp(it);
   const mv = (dx,dy) => { it.x = Math.max(0, Math.min(it.x+dx, D.w-f.w)); it.y = Math.max(0, Math.min(it.y+dy, D.d-f.d)); commit(); e.preventDefault(); };
@@ -1301,6 +1302,81 @@ $('#fApply').onclick = () => {
   toast(res.pct >= 99.999 ? `Wypełniono 100% obszaru: ${res.cells.length} nowych modułów.` : `Wypełniono ${fmt(res.pct,1)}% — zostały wąskie szczeliny przy ułożonych modułach.`);
 };
 
+
+/* ---------- gotowe układy szuflad kuchennych ---------- */
+const kit = {sel:null, res:new Map()};
+function kitCompute(){
+  const D = state.drawer, dim = {W:D.w, D:D.d, H:D.h};
+  kit.res = new Map(KITS.map(k => [k.id, buildKit(k, dim, state.settings.bed)]));
+  if(!kit.sel || !kit.res.get(kit.sel).ok) kit.sel = (KITS.find(k => kit.res.get(k.id).ok) || {}).id || null;
+}
+function kitPreview(res){
+  const D = state.drawer, m = Math.max(D.w, D.d)*0.02, big = Math.max(D.w, D.d), fs = big/34;
+  let sv = `<svg viewBox="${-m} ${-m} ${D.w+2*m} ${D.d+2*m}" xmlns="http://www.w3.org/2000/svg"><defs><pattern id="kgap" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2.5" height="6" fill="var(--danger)" fill-opacity=".5"/></pattern></defs><rect x="0" y="0" width="${D.w}" height="${D.d}" fill="var(--floor)" stroke="var(--wall)" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+  for(const g of res.gaps) sv += `<rect x="${g.x}" y="${g.y}" width="${g.w}" height="${g.d}" fill="url(#kgap)" stroke="var(--danger)" stroke-opacity=".6" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+  for(const c of res.cells){
+    const col = ZONES[c.zone].color, lw = (c.w - (c.nx+1)*WALL)/c.nx, ld = (c.d - (c.ny+1)*WALL)/c.ny;
+    sv += `<rect x="${c.x}" y="${c.y}" width="${c.w}" height="${c.d}" fill="${col}" fill-opacity=".45" stroke="#000" stroke-opacity=".5" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+    for(let i=0;i<c.nx;i++) for(let j=0;j<c.ny;j++)
+      sv += `<rect x="${c.x + WALL + i*(lw+WALL)}" y="${c.y + WALL + j*(ld+WALL)}" width="${lw}" height="${ld}" fill="${col}" fill-opacity=".85" stroke="#000" stroke-opacity=".25" stroke-width=".6" vector-effect="non-scaling-stroke"/>`;
+  }
+  // podpisy: nazwa modułu w 1–2 liniach, czcionka dopasowana do szerokości; za małe moduły bez podpisu
+  const label = (x, y, w, d, text) => {
+    const words = String(text).split(' '); let lines = [text];
+    if(words.length > 1 && text.length * 0.56 * fs > w * 0.9){ let best = null;
+      for(let i = 1; i < words.length; i++){ const a = words.slice(0, i).join(' '), b = words.slice(i).join(' '), m = Math.max(a.length, b.length); if(!best || m < best.m) best = {m, l:[a, b]}; }
+      lines = best.l; }
+    const longest = Math.max(...lines.map(l => l.length)), f = Math.min(fs, w * 0.92 / (longest * 0.56));
+    if(f < big/95 || f * 1.25 * lines.length > d * 0.95) return '';
+    return lines.map((l, i) => `<text x="${x + w/2}" y="${y + d/2 + (i - (lines.length-1)/2) * f * 1.25}" font-size="${f}" text-anchor="middle" dominant-baseline="middle" fill="#111" stroke="#fff" stroke-opacity=".7" stroke-width="${f/6}" paint-order="stroke">${esc(l)}</text>`).join('');
+  };
+  for(const c of res.cells) sv += label(c.x, c.y, c.w, c.d, c.label);
+  for(const g of res.gaps) sv += label(g.x, g.y, g.w, g.d, 'wolne miejsce');
+  return sv + '</svg>';
+}
+function renderKit(){
+  const D = state.drawer;
+  $('#kitList').innerHTML = KITS.map(k => { const r = kit.res.get(k.id);
+    return `<button type="button" class="kititem" data-k="${k.id}" aria-pressed="${k.id === kit.sel}" ${r.ok ? '' : 'disabled'}><b>${esc(k.name)}</b><span>${esc(k.short)}</span>${r.ok ? `<span>${r.stats.modules} szt. modułów, ${r.stats.kinds} rodz.</span>` : `<span class="no">Nie pasuje: ${esc(r.reason)}</span>`}</button>`; }).join('');
+  const k = KITS.find(x => x.id === kit.sel), r = k && kit.res.get(k.id);
+  $('#kitApply').disabled = !r || !r.ok;
+  $('#kitErr').textContent = r && r.ok ? '' : `Żaden układ nie mieści się w szufladzie ${fmt(D.w)} × ${fmt(D.d)} × ${fmt(D.h)} mm.`;
+  if(!r || !r.ok){ ['#kitPrev','#kitLeg','#kitWhere','#kitWhy','#kitStats'].forEach(q => $(q).innerHTML = ''); return; }
+  $('#kitPrev').innerHTML = kitPreview(r);
+  const zs = [...new Set([...r.cells.map(c => c.zone)])];
+  $('#kitLeg').innerHTML = zs.map(z => `<span><span class="dot" style="background:${ZONES[z].color}"></span>${esc(ZONES[z].name)}</span>`).join('') + (r.gaps.length ? '<span><span class="dot" style="background:var(--danger);opacity:.5"></span>wolne miejsce</span>' : '');
+  $('#kitWhere').innerHTML = `<b>Gdzie:</b> ${esc(k.where)}`;
+  $('#kitWhy').innerHTML = k.why.map(w => `<li>${esc(w)}</li>`).join('');
+  const byLabel = new Map(); r.cells.forEach(c => { const key = `${c.label} ${fmt(c.w,0)}×${fmt(c.d,0)} (${c.nx}×${c.ny})`; byLabel.set(key, (byLabel.get(key)||0)+1); });
+  $('#kitStats').innerHTML = `<p class="hint" style="margin:0">${[...byLabel].map(([n,c]) => `${esc(n)} ×${c}`).join(' · ')}</p>` +
+    (state.items.length ? `<p class="kitnote">Wstawienie zastąpi obecny układ (${state.items.length} szt. modułów).</p>` : '') +
+    r.notes.map(n => `<p class="kitnote">${esc(n)}</p>`).join('');
+}
+function openKit(){
+  if(!state.drawer){ toast('Najpierw podaj wymiary szuflady.'); openDrawer(); return; }
+  kitCompute(); renderKit(); $('#ovKit').hidden = false;
+}
+$('#kitBtn').onclick = openKit;
+$('#kitCancel').onclick = () => { $('#ovKit').hidden = true; };
+$('#kitList').addEventListener('click', e => { const b = e.target.closest('[data-k]'); if(!b || b.disabled) return; kit.sel = b.dataset.k; renderKit(); });
+$('#kitApply').onclick = () => {
+  const r = kit.res.get(kit.sel), k = KITS.find(x => x.id === kit.sel), D = state.drawer; if(!r || !r.ok) return;
+  state.items = [];
+  state.templates = state.templates.filter(t => t.preset || !t.base);   // zbędne warianty z poprzednich układów i wypełnień
+  const made = new Map(), hMaxAuto = Math.max(15, Math.round(D.h - 3));
+  for(const c of r.cells){
+    const key = [c.zone, c.label, c.w, c.d, c.nx, c.ny, c.divPct, c.hMax].join('|');
+    let t = made.get(key);
+    if(!t){
+      t = {id:'c'+(uid++), name:`${c.label} ${fmt(c.w)}×${fmt(c.d)}`, w:c.w, d:c.d, nx:c.nx, ny:c.ny, h:c.hMax != null ? Math.min(c.hMax, hMaxAuto) : 40, hAuto:c.hMax == null,
+        wall:1.6, floor:1.2, divPct:c.divPct, color:ZONES[c.zone].color, preset:false, base:'g:' + c.zone, baseName:c.label};
+      made.set(key, t); state.templates.push(t);
+    }
+    state.items.push({id:'i'+(uid++), tid:t.id, x:c.x, y:c.y, rot:0});
+  }
+  sel = null; $('#ovKit').hidden = true; commit();
+  toast(`Wstawiono układ „${k.name}”: ${r.cells.length} szt. modułów, ${r.stats.kinds} rodz.${r.gaps.length ? ' Zostało wolne miejsce.' : ''}`);
+};
 
 /* ---------- tryb prezentacji: realistyczny render do zdjęć produktowych ---------- */
 const pres = {open:false, shot:'hero', drawer:'oak', bg:'#F4F4F2', la:35, le:55, layers:true, ao:true, size:'2000x2000', wm:'', P:null,

@@ -122,6 +122,20 @@ table.bom{width:100%;border-collapse:collapse;font-size:12.5px}
 .sp[aria-checked="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .sp-t{grid-column:2;grid-row:1}.sp-l{grid-column:1;grid-row:2}.sp-r{grid-column:3;grid-row:2}.sp-b{grid-column:2;grid-row:3}
 .sp-box{grid-column:2;grid-row:2;width:min(100%,90px);max-height:60px;border:2px dashed var(--wall);border-radius:4px}
+.kitgrid{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.2fr);gap:16px}
+@media (max-width:760px){.kitgrid{grid-template-columns:1fr}}
+.kitlist{display:flex;flex-direction:column;gap:6px;max-height:min(480px,60vh);overflow:auto;padding-right:2px}
+.kititem{display:flex;flex-direction:column;gap:2px;text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 10px;cursor:pointer;font:inherit;color:var(--ink)}
+.kititem[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.kititem[disabled]{opacity:.55;cursor:default}
+.kititem b{font-size:13.5px}
+.kititem span{font-size:12px;color:var(--muted)}
+.kititem .no{color:var(--danger)}
+.kitprev{display:flex;flex-direction:column;gap:8px;min-width:0}
+.kitleg{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px}
+.kitwhy{margin:0;padding-left:18px;font-size:12.5px;display:flex;flex-direction:column;gap:3px}
+.kitwhere{font-size:12.5px;margin:0}
+.kitnote{font-size:12px;color:var(--warn);margin:0}
 .fillgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:16px}
 @media (max-width:700px){.fillgrid{grid-template-columns:1fr}}
 .fillopts{display:flex;flex-direction:column;gap:12px;min-width:0}
@@ -224,6 +238,7 @@ kbd{font:11px var(--f-mono);border:1px solid var(--line);border-bottom-width:2px
     <button class="dimchip lay-only" id="drawerBtn" type="button"><span>Szuflada</span><b id="drawerDims">—</b><em>Zmień</em></button>
     <button class="btn lay-only" id="layoutsBtn" type="button" style="padding:8px 12px">Zapisz / wczytaj układ</button>
     <button class="btn lay-only" id="pdfBtn" type="button" style="padding:8px 12px">Instrukcja PDF</button>
+    <button class="btn lay-only" id="kitBtn" type="button" style="padding:8px 12px">Gotowe układy</button>
     <button class="btn pri lay-only" id="fillBtn" type="button" style="padding:8px 12px">Wypełnij automatycznie</button>
     <button class="btn" id="jobsBtn" type="button" hidden style="padding:8px 12px">Folder zleceń</button>
     <button class="verchip" id="appVer" type="button" hidden title="Sprawdź, czy jest nowa wersja"></button>
@@ -457,6 +472,29 @@ kbd{font:11px var(--f-mono);border:1px solid var(--line);border-bottom-width:2px
     <button class="btn pri" id="pShoot" type="button" style="padding:9px 12px">Zrób zdjęcie</button>
     <p class="hint" style="margin:0" id="pInfo"></p>
   </aside>
+</div>
+
+<div class="overlay" id="ovKit" hidden>
+  <div class="modal" style="width:min(900px,100%)">
+    <h3>Gotowe układy szuflad kuchennych</h3>
+    <p class="lead">Układ jest liczony dla wymiarów Twojej szuflady: moduły zapełniają ją w 100%, a liczba i szerokość przegródek wynika z wymiarów przedmiotów. Moduły są cięte do rozmiaru stołu drukarki. „Wstaw do szuflady” zastępuje obecny układ.</p>
+    <div class="kitgrid">
+      <div><div class="kitlist" id="kitList"></div>
+        <p class="hint" style="margin:8px 0 0">Szafka 60 cm z trzema szufladami: górna — sztućce, środkowa — talerze lub przybory, dolna — garnki. Szafka przy płycie: przybory i przyprawy w górnej, garnki w dolnej.</p></div>
+      <div class="kitprev">
+        <div id="kitPrev" class="fprev"></div>
+        <div class="kitleg" id="kitLeg"></div>
+        <p class="kitwhere" id="kitWhere"></p>
+        <ul class="kitwhy" id="kitWhy"></ul>
+        <div id="kitStats"></div>
+      </div>
+    </div>
+    <p class="err" id="kitErr"></p>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn" type="button" id="kitCancel">Anuluj</button>
+      <button class="btn pri" type="button" id="kitApply">Wstaw do szuflady</button>
+    </div>
+  </div>
 </div>
 
 <div class="overlay" id="ovFill" hidden>
