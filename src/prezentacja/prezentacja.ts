@@ -39,11 +39,12 @@ function woodTex(kind){
   x.fillStyle = d.base; x.fillRect(0, 0, c.width, c.height);
   if(d.grain){
     for(let i=0;i<260;i++){
-      const y0 = rnd()*c.height, amp = 2 + rnd()*10, per = 300 + rnd()*900, ph = rnd()*6.28;
-      x.strokeStyle = rnd() < .6 ? d.dark : d.light; x.globalAlpha = .04 + rnd()*.16; x.lineWidth = .6 + rnd()*2.6;
+      const y0 = rnd()*c.height, amp = 1 + rnd()*5, per = 180 + rnd()*760, ph = rnd()*6.28;
+      x.strokeStyle = rnd() < .62 ? d.dark : d.light; x.globalAlpha = .035 + rnd()*.105; x.lineWidth = .45 + rnd()*1.8;
       x.beginPath(); for(let px=0; px<=c.width; px+=16){ const py = y0 + Math.sin(px/per*6.28 + ph)*amp + Math.sin(px/97 + ph)*1.2; px ? x.lineTo(px, py) : x.moveTo(px, py); } x.stroke();
     }
-    for(let i=0;i<40;i++){ x.globalAlpha = .05 + rnd()*.06; x.fillStyle = d.dark; x.fillRect(rnd()*c.width, rnd()*c.height, 30 + rnd()*120, .8 + rnd()*1.2); }
+    // drobne, krótkie włókna dają skalę bez rozmytych, szerokich pasów
+    for(let i=0;i<900;i++){ x.globalAlpha = .025 + rnd()*.055; x.fillStyle = rnd() < .7 ? d.dark : d.light; x.fillRect(rnd()*c.width, rnd()*c.height, 4 + rnd()*42, .35 + rnd()*.7); }
   }
   const img = x.getImageData(0, 0, c.width, c.height), px = img.data;
   for(let i=0;i<px.length;i+=4){ const n = (rnd() - .5) * (d.grain ? 10 : 5); px[i] += n; px[i+1] += n; px[i+2] += n; }
@@ -60,8 +61,9 @@ function plaMat(hex, axis = 'y'){
                          : {c:'y', up:'vec4(0.0, 1.0, 0.0, 0.0)', diag:'(vWP.x + vWP.z)', dv:'vec4(0.7071, 0.0, -0.7071, 0.0)'};
   const matte = (findFil(hex) || {} as any).matte;
   const m = new THREE.MeshPhysicalMaterial({color:new THREE.Color(hex).convertSRGBToLinear(), metalness:0,
-    ...(matte ? {roughness:.88, clearcoat:0, envMapIntensity:.2} : {roughness:.42, clearcoat:.15, clearcoatRoughness:.35, envMapIntensity:.18})});
-  const on = pres.layers ? 1 : 0, amp = matte ? .3 : .45;
+    ...(matte ? {roughness:.86, clearcoat:0, envMapIntensity:.2} : {roughness:.48, clearcoat:.1, clearcoatRoughness:.4, envMapIntensity:.2})});
+  // relief warstw celowo umiarkowany: wyraźny z bliska, bez mory w miniaturach sklepu
+  const on = pres.layers ? 1 : 0, amp = matte ? .22 : .32;
   m.onBeforeCompile = sh => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP;')
       .replace('#include <project_vertex>', '#include <project_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
@@ -77,9 +79,9 @@ function plaMat(hex, axis = 'y'){
         // nierówności co kilka warstw (lekkie falowanie osi Z) — widoczne także z dalszej odległości
         float t3 = vWP.${A.c} / 0.8, fw3 = fwidth(t3);
         float n3 = sin(t3 * 6.2831853 + sin(vWP.${A.c} * 0.37) * 2.0) * 0.6 + sin(vWP.${A.c} * 2.9 + 1.3) * 0.4;
-        normal = normalize(normal + upV * n3 * 0.07 * (1.0 - smoothstep(0.3, 0.9, fw3)) * side);
+        normal = normalize(normal + upV * n3 * 0.05 * (1.0 - smoothstep(0.3, 0.9, fw3)) * side);
         float t2 = ${A.diag} / 0.42, fw2 = fwidth(t2);
-        float a2 = 0.10 * (1.0 - smoothstep(0.2, 0.55, fw2)) * (1.0 - side);
+        float a2 = 0.06 * (1.0 - smoothstep(0.2, 0.55, fw2)) * (1.0 - side);
         vec3 dV = normalize((viewMatrix * ${A.dv}).xyz);
         normal = normalize(normal + dV * sin(t2 * 6.2831853) * a2);
       }`);
@@ -97,10 +99,10 @@ function presInit(){
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(28, 1, 5, 20000);
   if(THREE.RoomEnvironment){ const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(new THREE.RoomEnvironment(), 0.04).texture; pm.dispose(); }
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x9a9a96, .1); scene.add(hemi);
-  const key = new THREE.DirectionalLight(0xffffff, .82); key.castShadow = true; key.shadow.mapSize.set(2048, 2048);
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x9a958d, .1); scene.add(hemi);
+  const key = new THREE.DirectionalLight(0xfff7ef, .82); key.castShadow = true; key.shadow.mapSize.set(2048, 2048);
   key.shadow.bias = -0.0003; key.shadow.normalBias = 0.5; scene.add(key); scene.add(key.target);
-  const fillL = new THREE.DirectionalLight(0xffffff, .12); scene.add(fillL);
+  const fillL = new THREE.DirectionalLight(0xe9efff, .12); scene.add(fillL);
   const group = new THREE.Group(); scene.add(group);
   const controls = THREE.OrbitControls ? new THREE.OrbitControls(camera, renderer.domElement) : null;
   if(controls){ controls.enableDamping = true; controls.dampingFactor = .1; controls.maxPolarAngle = Math.PI*0.495; controls.screenSpacePanning = true; }
@@ -141,7 +143,12 @@ function presBounds(){
 }
 function presBuild(){
   const P = pres.P, g = P.group;
-  while(g.children.length){ const c = g.children.pop(); if(c.geometry && c.userData.own) c.geometry.dispose(); }
+  while(g.children.length){
+    const c = g.children.pop();
+    if(c.geometry && c.userData.own) c.geometry.dispose();
+    // materiały z pamięci podręcznej (plaMat, tekstura drewna) zostają; własne (deski, uchwyt, cienie, rurki) zwalniamy
+    if(c.material && c.userData.ownMat){ if(c.material.map) c.material.map.dispose(); c.material.dispose(); }
+  }
   if(isOne()){ presBuildOne(); return; }
   const L: PresLayout = pres.L, D = L.drawer;
   const none = pres.drawer === 'none', T16 = 16;
@@ -158,8 +165,9 @@ function presBuild(){
     const dk = DRAWERS[pres.drawer], tex = woodTex(pres.drawer);
     const board = (L, H, Th, x, y, z, rotY, grainLen) => {
       const t2 = tex.clone(); t2.needsUpdate = true; t2.repeat.set(grainLen/900, H/220); t2.offset.set((x*0.37 + z*0.11) % 1, (y*0.13) % 1);
-      const mat = new THREE.MeshPhysicalMaterial({map:t2, roughness:dk.rough, clearcoat: dk.grain ? .1 : .05, clearcoatRoughness:.5, envMapIntensity:.25});
-      const m = new THREE.Mesh(new THREE.BoxGeometry(L, H, Th), mat); m.userData.own = true;
+      const mat = new THREE.MeshPhysicalMaterial({map:t2, bumpMap:dk.grain ? t2 : null, bumpScale:dk.grain ? .35 : 0,
+        roughness:dk.rough, clearcoat: dk.grain ? .08 : .04, clearcoatRoughness:.55, envMapIntensity:.25});
+      const m = new THREE.Mesh(new THREE.BoxGeometry(L, H, Th), mat); m.userData.own = m.userData.ownMat = true;
       m.rotation.y = rotY || 0; m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; g.add(m); return m;
     };
     const sideH = D.h + 12;
@@ -170,25 +178,74 @@ function presBuild(){
     const fH = D.h + 22, fW = D.w + 2*T16 + 4;
     board(fW, fH, 18, D.w/2, fH/2 - 10, D.d + 9, 0, fW);                                        // front
     const hm = new THREE.MeshPhysicalMaterial({color:new THREE.Color('#9EA2A6').convertSRGBToLinear(), metalness:.85, roughness:.38, envMapIntensity:.55});
-    const hw = Math.min(320, D.w*.45), hd = new THREE.Mesh(new THREE.BoxGeometry(hw, 10, 14), hm); hd.userData.own = true;
-    hd.position.set(D.w/2, fH - 10 - 22, D.d + 18 + 7); hd.castShadow = true; g.add(hd);
-    [-1,1].forEach(sx => { const leg = new THREE.Mesh(new THREE.BoxGeometry(8, 8, 14), hm); leg.userData.own = true; leg.position.set(D.w/2 + sx*(hw/2 - 14), fH - 10 - 22, D.d + 18 + 7 - 7); g.add(leg); });
+    // uchwyt relingowy: okrągły pręt na dwóch nóżkach
+    const hw = Math.min(320, D.w*.45), hy = fH - 10 - 22, hz = D.d + 18;
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, hw, 48), hm); bar.userData.own = bar.userData.ownMat = true;
+    bar.rotation.z = Math.PI/2; bar.position.set(D.w/2, hy, hz + 22); bar.castShadow = true; g.add(bar);
+    [-1,1].forEach(sx => {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 4.5, 22, 32), hm); leg.userData.own = true;
+      leg.rotation.x = Math.PI/2; leg.position.set(D.w/2 + sx*(hw/2 - 16), hy, hz + 11); leg.castShadow = true; g.add(leg);
+    });
   }
-  // miękki cień kontaktowy pod szufladą / modułami
-  {
-    const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d');
-    const gr = x.createRadialGradient(128,128,40,128,128,128); gr.addColorStop(0,'rgba(0,0,0,0.55)'); gr.addColorStop(.55,'rgba(0,0,0,0.25)'); gr.addColorStop(1,'rgba(0,0,0,0)');
-    x.fillStyle = gr; x.fillRect(0,0,256,256);
-    const tx = new THREE.CanvasTexture(c), B = presBounds();
-    const cm = new THREE.MeshBasicMaterial({map:tx, transparent:true, depthWrite:false, opacity: pres.bg === '#2A2C2E' ? .9 : .55});
-    const cs = new THREE.Mesh(new THREE.PlaneGeometry((B.x1 - B.x0)*1.25, (B.z1 - B.z0)*1.25), cm); cs.userData.own = true;
-    cs.rotation.x = -Math.PI/2; cs.position.set((B.x0 + B.x1)/2, (none ? 0 : -8) - 0.05, (B.z0 + B.z1)/2); cs.renderOrder = -1; g.add(cs);
-  }
-  // podłoże studia (tylko cień)
-  const gm = new THREE.ShadowMaterial({opacity: pres.bg === '#2A2C2E' ? .45 : .22});
-  const GS = Math.max(D.w, D.d)*6, ground = new THREE.Mesh(new THREE.PlaneGeometry(GS, GS), gm); ground.userData.own = true;
-  ground.rotation.x = -Math.PI/2; ground.position.set(D.w/2, none ? -0.01 : -8.01, D.d/2); ground.receiveShadow = true; g.add(ground);
+  // cień na podłożu studia: rysowany i rozmyty (presGround), odświeżany przy zmianie kierunku światła
+  pres.ground = null;
   presBg(); presLight(); pres.dirty = true;
+}
+/** Bryły rzucające cień na podłoże: cała szuflada albo każdy moduł osobno (mm, y = wysokość nad podłożem). */
+function groundBoxes(){
+  const L: PresLayout = pres.L, D = L.drawer;
+  if(pres.drawer !== 'none') return {y:-8, boxes:[{x0:-16, z0:-16, x1:D.w + 16, z1:D.d + 18, h:D.h + 20}]};
+  return {y:0, boxes:L.modules.map(m => { const w = m.rot ? m.d : m.w, d = m.rot ? m.w : m.d; return {x0:m.x, z0:m.y, x1:m.x + w, z1:m.y + d, h:m.h}; })};
+}
+/** Otoczka wypukła punktów (łańcuch monotoniczny). */
+function hull(pts: number[][]){
+  const p = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cr = (o, a, b) => (a[0] - o[0])*(b[1] - o[1]) - (a[1] - o[1])*(b[0] - o[0]);
+  const lo: number[][] = [], up: number[][] = [];
+  for(const q of p){ while(lo.length >= 2 && cr(lo[lo.length-2], lo[lo.length-1], q) <= 0) lo.pop(); lo.push(q); }
+  for(const q of [...p].reverse()){ while(up.length >= 2 && cr(up[up.length-2], up[up.length-1], q) <= 0) up.pop(); up.push(q); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+// Miękki cień jak w studiu ze softboksem: ciemny cień kontaktowy tuż przy bryle i rozmyty cień rzucony
+// w stronę przeciwną do światła. Zastępuje cień z mapy cieni, który z góry wyglądał jak przesunięta kartka.
+function presGround(){
+  if(isOne() || !pres.L) return;
+  const P = pres.P, g = P.group;
+  if(pres.ground){ g.remove(pres.ground); pres.ground.geometry.dispose(); pres.ground.material.map.dispose(); pres.ground.material.dispose(); pres.ground = null; }
+  const {y, boxes} = groundBoxes(); if(!boxes.length) return;
+  const a = pres.la*Math.PI/180, e = Math.max(20, pres.le)*Math.PI/180, k = 1/Math.tan(e);
+  const dx = -Math.sin(a)*k, dz = -Math.cos(a)*k;          // przesunięcie cienia na 1 mm wysokości
+  const hMax = Math.max(...boxes.map(b => b.h)), soft = Math.max(8, hMax*k*0.22);
+  let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+  for(const b of boxes){ x0 = Math.min(x0, b.x0, b.x0 + dx*b.h); z0 = Math.min(z0, b.z0, b.z0 + dz*b.h); x1 = Math.max(x1, b.x1, b.x1 + dx*b.h); z1 = Math.max(z1, b.z1, b.z1 + dz*b.h); }
+  const span = Math.max(...boxes.map(b => b.x1), 0) - Math.min(...boxes.map(b => b.x0), 0), loose = pres.drawer === 'none', amb = Math.max(10, span*(loose ? 0.055 : 0.045));
+  const pad = Math.max(soft, amb)*3 + 12; x0 -= pad; z0 -= pad; x1 += pad; z1 += pad;
+  const W = x1 - x0, H = z1 - z0, sc = Math.min(4, 2048 / Math.max(W, H));   // px na mm
+  const cw = Math.ceil(W*sc), ch = Math.ceil(H*sc);
+  const layer = (draw: (x: CanvasRenderingContext2D) => void) => {
+    const c = document.createElement('canvas'); c.width = cw; c.height = ch; const x = c.getContext('2d')!;
+    x.setTransform(sc, 0, 0, sc, -x0*sc, -z0*sc); x.fillStyle = '#000'; draw(x); return c;
+  };
+  const poly = (x, pts) => { x.beginPath(); pts.forEach((q, i) => i ? x.lineTo(q[0], q[1]) : x.moveTo(q[0], q[1])); x.closePath(); x.fill(); };
+  const cast = layer(x => boxes.forEach(b => poly(x, hull([[b.x0,b.z0],[b.x1,b.z0],[b.x1,b.z1],[b.x0,b.z1]].flatMap(q => [q, [q[0] + dx*b.h, q[1] + dz*b.h]])))));
+  const contact = layer(x => boxes.forEach(b => x.fillRect(b.x0 - 1, b.z0 - 1, b.x1 - b.x0 + 2, b.z1 - b.z0 + 2)));
+  const out = document.createElement('canvas'); out.width = cw; out.height = ch; const o = out.getContext('2d')!;
+  const dark = pres.bg === '#2A2C2E';
+  o.filter = `blur(${(soft*sc).toFixed(1)}px)`; o.globalAlpha = dark ? .5 : .3; o.drawImage(cast, 0, 0);
+  // szeroka, jasna poświata cienia dookoła (światło z otoczenia) — bryła „stoi”, a nie wisi, także w ujęciu z przodu
+  o.filter = `blur(${(amb*sc).toFixed(1)}px)`; o.globalAlpha = loose ? (dark ? .6 : .45) : (dark ? .35 : .2); o.drawImage(contact, 0, 0);
+  o.filter = `blur(${(Math.max(3, soft*(loose ? 0.6 : 0.3))*sc).toFixed(1)}px)`; o.globalAlpha = dark ? .7 : .45; o.drawImage(contact, 0, 0);
+  // z SSAO obraz jest mieszany w przestrzeni liniowej, przez co półprzezroczysta czerń wychodzi jaśniej niż na
+  // przezroczystym tle; przeliczamy krycie tak, żeby cień wyglądał tak samo w obu trybach
+  if(pres.ao && P.composer && pres.bg !== 'transparent'){
+    const img = o.getImageData(0, 0, cw, ch), d = img.data;
+    for(let i = 3; i < d.length; i += 4) if(d[i]) d[i] = Math.round(255 * (1 - Math.pow(1 - d[i]/255, 2.2)));
+    o.putImageData(img, 0, 0);
+  }
+  const tx = new THREE.CanvasTexture(out);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({map:tx, transparent:true, depthWrite:false, color:0x000000}));
+  m.rotation.x = -Math.PI/2; m.position.set(x0 + W/2, y - 0.05, z0 + H/2); m.renderOrder = -1; m.userData.own = m.userData.ownMat = true;
+  g.add(m); pres.ground = m;
 }
 // pojedynczy model: wieszak na rurce grzejnika drabinkowego, za nim ściana (tylko cień, w kolorze tła)
 function presBuildOne(){
@@ -209,15 +266,15 @@ function presBuildOne(){
     const len = pres.shot === 'top' ? (B.z1 - B.z0) + 70 : 1400;
     pres.stubs = pres.shot === 'top';
     for(const c of all){
-      const m = new THREE.Mesh(new THREE.CylinderGeometry(c.r, c.r, len, 96, 1), mat); m.userData.own = true;
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(c.r, c.r, len, 96, 1), mat); m.userData.own = m.userData.ownMat = true;
       m.rotation.x = Math.PI/2; m.position.set(c.x, c.y, zc); m.castShadow = m.receiveShadow = true; g.add(m);
     }
     wallX = Math.min(...cyl.map(c => c.x - c.r)) - 45;
   }
   // bez grzejnika: sam wieszak, bez ściany i cienia — czysty wycinek produktu
   if(pres.rad === 'none' || !cyl.length){ presBg(); presLight(); pres.dirty = true; return; }
-  const wm = new THREE.ShadowMaterial({opacity: dark ? .32 : .12});
-  const wall = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), wm); wall.userData.own = true;
+  const wm = new THREE.ShadowMaterial({opacity: dark ? .4 : .24});
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), wm); wall.userData.own = wall.userData.ownMat = true;
   wall.rotation.y = Math.PI/2; wall.position.set(wallX, (B.y0 + B.y1)/2, zc); wall.receiveShadow = true; g.add(wall);
   presBg(); presLight(); pres.dirty = true;
 }
@@ -246,6 +303,7 @@ function presLight(){
   P.key.target.position.set(cx, 0, cz); P.key.target.updateMatrixWorld();
   const sc = P.key.shadow.camera, ext = S*1.1; sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.near = r*0.3; sc.far = r*2; sc.updateProjectionMatrix();
   P.fillL.position.set(cx - Math.sin(a)*r, r*0.6, cz - Math.cos(a)*r);
+  presGround();
   pres.dirty = true;
 }
 function presShot(kind){
@@ -406,7 +464,7 @@ export function mountPresentation(e: PresEnv): PresApi {
   $('#pLightA').addEventListener('input', ev => { pres.la = +ev.target.value; presLight(); });
   $('#pLightE').addEventListener('input', ev => { pres.le = +ev.target.value; presLight(); });
   $('#pLayers').addEventListener('change', ev => { pres.layers = ev.target.checked; presBuild(); });
-  $('#pAO').addEventListener('change', ev => { pres.ao = ev.target.checked; presBg(); pres.dirty = true; });
+  $('#pAO').addEventListener('change', ev => { pres.ao = ev.target.checked; presBg(); presGround(); pres.dirty = true; });
   $('#pSize').addEventListener('change', ev => { pres.size = ev.target.value; presLayout(); presInfo(); });
   $('#pWm').addEventListener('input', ev => { pres.wm = ev.target.value.trim(); presWm(); });
   $('#pShoot').onclick = presSnapshot;

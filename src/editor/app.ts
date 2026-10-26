@@ -485,9 +485,9 @@ function renderLib(){
         <button class="btn dng" data-act="delyes" data-t="${t.id}" type="button">Usuń</button>
         <button class="btn" data-act="delno" data-t="${t.id}" type="button">Anuluj</button></div></li>`;
     return `<li class="mod">${miniSvg(t, 40)}
-      <div class="nm"><span title="${esc(t.name)}">${esc(t.name)}</span>${t.preset?'':'<span class="tag">własny</span>'}${c?`<span class="badge" title="Sztuk w szufladzie">${c}</span>`:''}</div>
+      <div class="nm"><span title="${esc(t.name)}">${esc(t.name)}</span>${c?`<span class="badge" title="Sztuk w szufladzie">${c} szt.</span>`:''}</div>
       <button class="xdel" data-act="del" data-t="${t.id}" type="button" title="Usuń moduł" aria-label="Usuń moduł ${esc(t.name)}">×</button>
-      <div class="meta" style="grid-column:2/-1">${fmt(g.W)} × ${fmt(g.D)} × ${fmt(g.H)} · ${t.nx}×${t.ny}</div>
+      <div class="meta" style="grid-column:2/-1">${fmt(g.W)} × ${fmt(g.D)} × ${fmt(g.H)} · ${t.nx}×${t.ny}${t.preset?'':' <span class="tag" title="Moduł dodany lub zmieniony przez Ciebie">własny</span>'}</div>
       <div class="acts">
         <button class="btn sm out" data-act="add" data-t="${t.id}" type="button" ${state.drawer?'':'disabled'}>+ Dodaj</button>
         <button class="btn sm" data-act="edit" data-t="${t.id}" type="button">Edytuj</button>
@@ -578,7 +578,7 @@ function renderStatus(){
   const it = selItem();
   el.innerHTML = `<span>Zajętość dna <b>${fmt(pct,0)}%</b></span><span>Modułów <b>${state.items.length}</b></span>
     <span>Wolne <b>${fmt(Math.max(0, D.w*D.d-area)/100,0)} cm²</b></span>
-    ${it?`<span>Pozycja <b>${fmt(it.x)}, ${fmt(it.y)}</b></span>`:''}
+    ${it?`<span title="Od lewej i od tyłu szuflady">Pozycja <b>${fmt(it.x)} × ${fmt(it.y)}</b> mm</span>`:''}
     ${bad.size?`<span class="chip bad">${bad.size} ${bad.size===1?'kolizja':'kolizje'}</span>`:state.items.length?'<span class="chip ok">Układ pasuje</span>':''}
     <button class="btn sm" id="clearAll" type="button" ${state.items.length?'':'disabled'} title="Usuń wszystkie moduły z szuflady">Wyczyść</button>
     <span class="keys"><kbd>R</kbd> obrót · <kbd>D</kbd> kopia · <kbd>Del</kbd> usuń · strzałki przesuwają</span>`;
@@ -624,7 +624,7 @@ async function pingHelper(){
 }
 function renderSlicer(){
   const box = $('#slicerBox'), used = usage().length;
-  $('#dl3mf').hidden = inClaude;
+  $('#dl3mf').hidden = inClaude; $('#dlAll').style.gridColumn = inClaude ? '1 / -1' : '';
   if(inClaude){ box.innerHTML = `<p class="hint">Wysyłanie prosto do Bambu Studio działa w wersji offline, razem z pomocnikiem Bambu-most.bat.</p>`; return; }
   box.innerHTML = `<button class="btn ${helper.ok?'pri':''}" id="toSlicer" type="button" ${helper.ok && used && !helper.busy ? '' : 'disabled'}>${helper.busy ? 'Wysyłam…' : 'Otwórz w Bambu Studio'}</button>
     <div class="st ${helper.ok?'on':''}"><i></i>${helper.ok
@@ -836,7 +836,11 @@ function init3d(){
   const dl2 = new THREE.DirectionalLight(0xffffff, 0.12); dl2.position.set(-0.6, 0.5, -0.4); scene.add(dl2);
   const group = new THREE.Group(); scene.add(group);
   T = {renderer, scene, camera, controls, group, host, running:false, fitted:null, sun:dl};
-  const resize = () => { const w = host.clientWidth, h = host.clientHeight; if(!w||!h) return; renderer.setSize(w, h, false); camera.aspect = w/h; camera.updateProjectionMatrix(); };
+  const resize = () => {
+    const w = host.clientWidth, h = host.clientHeight; if(!w||!h) return; renderer.setSize(w, h, false); camera.aspect = w/h; camera.updateProjectionMatrix();
+    if(T.fitted && !T.userMoved && state.drawer) fitCam();   // dopóki użytkownik nie obracał widoku, kadr dopasowuje się do okna
+  };
+  if(controls) controls.addEventListener('start', () => { T.userMoved = true; });
   new ResizeObserver(resize).observe(host); resize();
   // klik = zaznaczenie
   let down = null; const ray = new THREE.Raycaster();
@@ -862,11 +866,17 @@ function threeGeo(g){
   const edges = new THREE.EdgesGeometry(bg, 20);
   const r = {bg, edges}; geoCache3.set(k, r); return r;
 }
+// kamera tak, żeby cała szuflada mieściła się w oknie przy każdych proporcjach widoku (także na wąskim ekranie)
 function fitCam(){
-  const D = state.drawer, s = Math.max(D.w, D.d);
-  T.camera.position.set(D.w*0.5 + s*0.15, s*0.95, D.d + s*0.75);
-  if(T.controls){ T.controls.target.set(D.w/2, 0, D.d/2); T.controls.update(); } else T.camera.lookAt(D.w/2,0,D.d/2);
-  T.fitted = `${D.w}x${D.d}`;
+  const D = state.drawer, s = Math.max(D.w, D.d), host = T.renderer.domElement.parentElement;
+  const asp = host && host.clientWidth && host.clientHeight ? host.clientWidth / host.clientHeight : T.camera.aspect || 1;
+  if(Math.abs(T.camera.aspect - asp) > 1e-3){ T.camera.aspect = asp; T.camera.updateProjectionMatrix(); }
+  const tgt = new THREE.Vector3(D.w/2, D.h*0.2, D.d/2), dir = new THREE.Vector3(s*0.15, s*0.95, s*0.75 + D.d*0.5).normalize();
+  const t = Math.max(8, s/60), r = Math.hypot(D.w + 2*t, D.d + 2*t, D.h) / 2 * 1.04;
+  const vf = T.camera.fov*Math.PI/360, hf = Math.atan(Math.tan(vf)*asp), dist = r / Math.sin(Math.min(vf, hf)) * 0.8;   // kula otaczająca jest większa niż rzut szuflady
+  T.camera.position.copy(tgt).addScaledVector(dir, dist);
+  if(T.controls){ T.controls.target.copy(tgt); T.controls.update(); } else T.camera.lookAt(tgt);
+  T.fitted = `${D.w}x${D.d}x${D.h}@${asp.toFixed(2)}`; T.userMoved = false;
 }
 function rebuild3d(){
   if(!state.drawer || !init3d()) return;
@@ -902,7 +912,7 @@ function rebuild3d(){
       objs.forEach(o => { if(it.rot){ o.rotation.y = Math.PI/2; o.position.set(it.x, 0, it.y + tp.w); } else o.position.set(it.x, 0, it.y); grp.add(o); });
     });
   }
-  if(T.fitted !== `${D.w}x${D.d}`) fitCam();
+  if(!T.fitted || !T.fitted.startsWith(`${D.w}x${D.d}x${D.h}@`)) fitCam();
   if(!T.running) loop();
 }
 function loop(){
@@ -1208,7 +1218,7 @@ async function makeInstruction(){
     pages.forEach((pg, i) => pdfFooter(pg, i+1, pages.length));
     await offer(`instrukcja_${slug(name)}.pdf`, buildPdf(pages, 'Instrukcja: ' + name));
   }catch(e){ toast('Nie udało się przygotować PDF: ' + (e && e.message || e)); }
-  finally{ btn.disabled = false; btn.textContent = 'Instrukcja (PDF)'; }
+  finally{ btn.disabled = false; btn.textContent = 'Instrukcja PDF'; }
 }
 $('#pdfBtn').onclick = makeInstruction;
 
@@ -1410,12 +1420,15 @@ $('#kitApply').onclick = () => {
     const key = [c.zone, c.label, c.w, c.d, c.nx, c.ny, c.divPct, c.hMax].join('|');
     let t = made.get(key);
     if(!t){
-      t = {id:'c'+(uid++), name:`${c.label} ${fmt(c.w)}×${fmt(c.d)}`, w:c.w, d:c.d, nx:c.nx, ny:c.ny, h:c.hMax != null ? Math.min(c.hMax, hMaxAuto) : 40, hAuto:c.hMax == null,
+      t = {id:'c'+(uid++), name:c.label, w:c.w, d:c.d, nx:c.nx, ny:c.ny, h:c.hMax != null ? Math.min(c.hMax, hMaxAuto) : 40, hAuto:c.hMax == null,
         wall:1.6, floor:1.2, divPct:c.divPct, color:ZONES[c.zone].color, preset:false, base:'g:' + c.zone, baseName:c.label};
       made.set(key, t); state.templates.push(t);
     }
     state.items.push({id:'i'+(uid++), tid:t.id, x:c.x, y:c.y, rot:0});
   }
+  // nazwa = sama strefa (wymiary są pokazywane obok); wymiar dopisujemy tylko, gdy ta sama strefa ma kilka rozmiarów
+  const byName = new Map<string, any[]>(); for(const t of made.values()){ if(!byName.has(t.name)) byName.set(t.name, []); byName.get(t.name)!.push(t); }
+  for(const ts of byName.values()) if(ts.length > 1) ts.forEach(t => t.name = `${t.name} ${fmt(t.w)}×${fmt(t.d)}`);
   sel = null; $('#ovKit').hidden = true; commit();
   toast(`Wstawiono układ „${k.name}”: ${r.cells.length} szt. modułów, ${r.stats.kinds} rodz.${r.gaps.length ? ' Zostało wolne miejsce.' : ''}`);
 };

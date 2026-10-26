@@ -17,7 +17,7 @@ Wynik:
 
 Wymaga: Python 3, Playwright z Chromium (pip install playwright && playwright install chromium).
 """
-import argparse, html, os, sys, time
+import argparse, base64, html, os, sys, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PAGE = 'file://' + os.path.join(ROOT, 'dist', 'konfigurator-offline.html')
@@ -71,8 +71,13 @@ def shoot(pg, opts, size, path):
     pg.set_checked('#pLayers', opts.get('layers', True))
     if pg.is_enabled('#pAO'): pg.set_checked('#pAO', opts.get('ao', True))
     pg.click(f"#pShot [data-v={opts['shot']}]"); pg.select_option('#pSize', size); pg.wait_for_timeout(400)
-    with pg.expect_download(timeout=300000) as d: pg.click('#pShoot')
-    d.value.save_as(path)
+    # WebView/Playwright może anulować pobranie blob URL w trybie headless.
+    # Przechwytujemy wyłącznie link zdjęcia i zapisujemy te same bajty PNG z eksportu aplikacji.
+    pg.evaluate('window.__presPng = null')
+    pg.click('#pShoot')
+    pg.wait_for_function('window.__presPng instanceof Promise', timeout=300000)
+    encoded = pg.evaluate('async () => await window.__presPng')
+    with open(path, 'wb') as f: f.write(base64.b64decode(encoded))
 
 
 def page_html(rows, out_dir):
@@ -108,6 +113,19 @@ def main():
         for name, desc, subject, opts in shots:
             ctx = b.new_context(viewport={'width': 1400, 'height': 1000}, accept_downloads=True)
             pg = ctx.new_page(); pg.on('pageerror', lambda e, n=name: errors.append(f'{n}: {e}'))
+            pg.add_init_script("""(() => {
+              const nativeClick = HTMLAnchorElement.prototype.click;
+              HTMLAnchorElement.prototype.click = function(){
+                if(this.download && this.download.startsWith('zdjecie_')){
+                  const url = this.href;
+                  window.__presPng = fetch(url).then(r => r.blob()).then(blob => new Promise(resolve => {
+                    const reader = new FileReader(); reader.onload = () => resolve(reader.result.split(',')[1]); reader.readAsDataURL(blob);
+                  }));
+                  return;
+                }
+                return nativeClick.call(this);
+              };
+            })();""")
             pg.set_default_timeout(120000)  # programowa grafika (SwiftShader) bywa bardzo wolna
             t0 = time.time()
             try:

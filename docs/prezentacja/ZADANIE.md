@@ -110,6 +110,7 @@ Możesz dodawać nowe ustawienia, ujęcia, otoczenia i tła.
 ## 4. Stan obecny i co jest słabe
 
 Zdjęcia „przed” leżą w `docs/prezentacja/przed/`, 19 ujęć, opisy są w `tools/prezentacja/podglad.py`.
+Co już weszło z poprzedniej rundy i czego nie przyjęto: `docs/prezentacja/UWAGI.md`.
 Najsłabsze miejsca, od najważniejszych:
 
 1. **Plastikowy wygląd „z programu 3D”.**
@@ -119,11 +120,11 @@ Najsłabsze miejsca, od najważniejszych:
 2. **Światło i cienie.**
    - Jedno twarde światło kierunkowe plus słaby fill, bez mapowania tonów (`NoToneMapping`).
    - Cienie są ostre i „schodkowe”, a wnętrze szuflady jest płaskie.
-   - W ujęciu z góry (`uklad-dab-gora`) cień całej szuflady wygląda jak przesunięta szara kartka.
+   - Cień na podłożu jest już miękki i rysowany (`presGround`, od v0.3.12); cienie wewnątrz szuflady dalej idą z mapy cieni.
    - Brakuje miękkiego światła studyjnego (softbox) i odbić od białego tła.
 3. **Drewno szuflady.**
    - Usłojenie na dnie jest rozciągnięte i rozmyte (`uklad-dab-detal`), a deski nie mają obrzeży ani fazek.
-   - Uchwyt to prostopadłościan.
+   - Uchwyt jest prostym relingiem (od v0.3.12), deski nie mają fazek.
    - Szuflada nie wygląda jak mebel: brak prowadnic i grubości frontu z wyraźną krawędzią.
 4. **Kadrowanie.**
    - Ujęcie „z przodu” jest płaskie, a „detal” obcina przypadkowo.
