@@ -115,3 +115,4 @@ wszystkich gotowych wariantów nowego modelu.
 Do budowania brył:
 - `geometry/heightmesh.ts` — pojemniki, ścianki, przegródki (rzut z góry + wysokości),
 - `geometry/extrude.ts` — profil 2D (łuki i odcinki o stałej grubości) wyciągnięty na szerokość.
+
