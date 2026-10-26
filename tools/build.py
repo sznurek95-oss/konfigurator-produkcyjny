@@ -25,6 +25,24 @@ LIBS = [  # (plik w vendor/, adres CDN)
     'postprocessing/ShaderPass.js', 'math/SimplexNoise.js', 'shaders/SSAOShader.js',
     'postprocessing/SSAOPass.js', 'shaders/GammaCorrectionShader.js')]
 
+
+def extra_libs():
+    """Dodatki three.js r128 dla trybu prezentacji: src/prezentacja/biblioteki.txt, jedna ścieżka
+    względem examples/js na linię (np. postprocessing/SAOPass.js). Plik musi leżeć w vendor/examples/."""
+    p = os.path.join(SRC, 'prezentacja', 'biblioteki.txt')
+    if not os.path.exists(p): return []
+    have, out = {f for f, _ in LIBS}, []
+    for line in open(p, encoding='utf8'):
+        e = line.split('#', 1)[0].strip()
+        if not e: continue
+        if '..' in e or e.startswith('/'): sys.exit(f'biblioteki.txt: niedozwolona ścieżka {e}')
+        f = 'examples/' + e
+        if f in have: continue
+        if not os.path.exists(os.path.join(VENDOR, f)): sys.exit(f'biblioteki.txt: brak pliku vendor/{f} (skopiuj go z pakietu three@0.128.0, examples/js/{e})')
+        have.add(f); out.append((f, CDN + e))
+    return out
+
+
 FONTS = [('Bricolage Grotesque', 'bricolage-grotesque', [600, 700]),
          ('IBM Plex Sans', 'ibm-plex-sans', [400, 500, 600]),
          ('IBM Plex Mono', 'ibm-plex-mono', [400, 500])]
@@ -134,6 +152,7 @@ def font_css():
 
 
 def main():
+    LIBS.extend(extra_libs())
     compile_ts()
     js, order = bundle()
     if '</script' in js.lower(): sys.exit('Kod zawiera </script>')

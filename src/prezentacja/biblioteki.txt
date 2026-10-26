@@ -1,0 +1,5 @@
+# Dodatkowe moduły three.js r128 (examples/js) dla trybu prezentacji — jedna ścieżka na linię.
+# Plik musi leżeć w vendor/examples/<ścieżka> (skopiuj z pakietu npm three@0.128.0, katalog examples/js/).
+# tools/build.py dołącza je po bibliotekach podstawowych, w wersji offline wkleja do pliku HTML.
+# Przykład:
+# postprocessing/SAOPass.js

@@ -41,6 +41,19 @@ Układ, który się nie mieści (za wąska, płytka albo niska szuflada), jest s
 wydrukować jako moduł (stos talerzy ⌀ 27 cm przy stole 256 mm), zostaje oznaczony jako „wolne miejsce”.
 Silnik: `src/layout/gotowe.ts`, testy: `tests/uklady.test.js` (szczelne pokrycie na siatce wymiarów i na losowych szufladach).
 
+## Tryb prezentacji (zdjęcia do sklepu) — moduł wydzielony
+
+Realistyczne zdjęcia produktowe robi osobny moduł `src/prezentacja/` (scena, światło, materiały, panel).
+Z resztą konfiguratora łączy go tylko kontrakt `src/editor/prezentacja-kontrakt.ts`: konfigurator podaje
+gotowe bryły i wymiary, moduł oddaje plik PNG. Dzięki temu wygląd zdjęć może dopracowywać ktoś inny
+(także inny model AI) bez ryzyka dla edytora, modeli i plików do druku.
+
+- Zlecenie i zasady: `docs/prezentacja/ZADANIE.md` (skrót dla agentów AI: `AGENTS.md` / `CLAUDE.md`).
+- Podgląd 19 ujęć „przed / po”: `python3 tools/prezentacja/podglad.py` → `build/prezentacja/porownanie.html`.
+- Strażnik strefy: `python3 tools/strefa_prezentacji.py` — także automatycznie przy każdym pull requeście
+  (GitHub Actions „Kontrola zmian”: strefa, testy, zdjęcia „przed / po” jako artefakt do pobrania).
+- Dodatki three.js r128 dla prezentacji: `src/prezentacja/biblioteki.txt` + plik w `vendor/examples/`.
+
 ## Jak zbudować
 
 Potrzebne: Python 3 i TypeScript (`tsc`).
@@ -79,7 +92,8 @@ Trzy skrypty Pythona wymagają Playwright z przeglądarką Chromium.
 | `src/layout/` | automatyczne wypełnianie obszaru w 100% (`autofill.ts`) i gotowe układy szuflad kuchennych (`gotowe.ts`) |
 | `src/materials/` | kolory Rosa3D, gęstości materiałów |
 | `src/export/` | STL, 3MF (także dwukolorowy), ZIP, PDF |
-| `src/editor/` | interfejs: `app.ts` (szuflada, prezentacja) i `single.ts` (edytor pojedynczego modelu) |
+| `src/editor/` | interfejs: `app.ts` (szuflada) i `single.ts` (edytor pojedynczego modelu), kontrakt trybu prezentacji |
+| `src/prezentacja/` | tryb prezentacji: realistyczne zdjęcia produktowe (moduł wydzielony) |
 | `src/index.html` | wygląd strony (HTML + CSS) |
 | `vendor/` | biblioteki Three.js i czcionki do wersji offline |
 | `src-tauri/` | aplikacja na PC: folder zleceń, otwieranie Bambu Studio |
