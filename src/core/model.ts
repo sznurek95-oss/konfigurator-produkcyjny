@@ -19,6 +19,7 @@ export interface BuildCtx {
   drawerH: number | null;  // wysokość wnętrza szuflady (dla wysokości „auto”)
   tol: number;             // luz odejmowany od wymiaru zewnętrznego
   label: boolean;          // napis z wymiarem w dnie
+  code?: string;           // numer pozycji w szufladzie (np. „A3”), wytłoczony w dnie przed wymiarem
 }
 
 /** Parametry jednego wariantu modelu (szablonu w bibliotece). */

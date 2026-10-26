@@ -7,7 +7,7 @@
 // Biblioteki: three.js r128 (globalnie jako THREE) z dodatkami ładowanymi w tools/build.py
 // (OrbitControls, RoomEnvironment, EffectComposer, SSAOPass, ShaderPass, GammaCorrectionShader, SimplexNoise).
 // Kolejne dodatki three r128 można dopisać w src/prezentacja/biblioteki.txt.
-import type { PresApi, PresEnv, PresLayout, PresSingle, PresSubject } from '../editor/prezentacja-kontrakt.js';
+import type { PresApi, PresEnv, PresLayout, PresPhotoOpts, PresSingle, PresSubject } from '../editor/prezentacja-kontrakt.js';
 import { findFil } from '../materials/rosa3d.js';
 import { mulberry } from '../layout/autofill.js';
 import { PRES_CSS, PRES_HTML } from './widok.js';
@@ -344,25 +344,48 @@ function presInfo(){
   const cols = [...new Set((pres.L as PresLayout).colors.map(c => c.name + (c.band ? ' (pas)' : '')))];
   $('#pInfo').textContent = `Zdjęcie ${w} × ${h} px, renderowane z podwójną rozdzielczością i zmniejszane, żeby krawędzie były gładkie. Kolory: ${cols.join(', ')}.`;
 }
+/** Render w rozdzielczości zdjęcia (z nadpróbkowaniem) do PNG; potem przywraca rozmiar podglądu. */
+async function renderPng(w: number, h: number, wm: string): Promise<Blob> {
+  const P = pres.P;
+  const maxTex = P.renderer.capabilities.maxTextureSize || 8192, ss = Math.max(1, Math.min(2, Math.floor(maxTex / Math.max(w, h))));
+  const pr0 = P.renderer.getPixelRatio(), size0 = P.renderer.getSize(new THREE.Vector2());
+  presSetSize(w*ss, h*ss, 1);
+  presRender();
+  const out = document.createElement('canvas'); out.width = w; out.height = h;
+  const cx = out.getContext('2d'); cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high';
+  cx.drawImage(P.renderer.domElement, 0, 0, w*ss, h*ss, 0, 0, w, h);
+  if(wm){
+    const fs = Math.round(Math.min(w, h)*0.032), dark = pres.bg === '#2A2C2E';
+    cx.font = `600 ${fs}px "Bricolage Grotesque", "Segoe UI", sans-serif`; cx.textAlign = 'right'; cx.textBaseline = 'bottom';
+    cx.fillStyle = dark ? 'rgba(255,255,255,.85)' : 'rgba(27,33,30,.78)'; cx.fillText(wm, w - Math.round(w*0.03), h - Math.round(h*0.03));
+  }
+  if(size0.x > 0 && size0.y > 0){ presSetSize(size0.x, size0.y, pr0); presRender(); }
+  return await new Promise(r => out.toBlob(r, 'image/png'));
+}
+/** Zdjęcie bez otwierania panelu (np. do PDF dla klienta). Ustawienia panelu wracają do poprzednich. */
+async function presPhoto(subject: PresSubject, o: PresPhotoOpts = {}): Promise<Blob | null> {
+  if(pres.open) return null;
+  const data = subject === 'layout' ? env.layout() : env.single(); if(!data) return null;
+  const keep = {subj: pres.subj, L: pres.L, one: pres.one, shot: pres.shot, drawer: pres.drawer, rad: pres.rad, bg: pres.bg, la: pres.la, le: pres.le, stubs: pres.stubs};
+  try{
+    if(!presInit()) return null;
+    pres.subj = subject;
+    if(subject === 'layout') pres.L = data; else pres.one = data;
+    if(o.env){ if(subject === 'layout') pres.drawer = o.env; else pres.rad = o.env; }
+    pres.bg = o.bg || '#F4F4F2';
+    if(subject !== keep.subj){ const d = subject === 'single' ? {la:55, le:40} : {la:35, le:55}; pres.la = d.la; pres.le = d.le; }
+    presBuild(); presShot(o.shot || 'hero');
+    return await renderPng(o.w || 1600, o.h || 1600, '');
+  }finally{
+    Object.assign(pres, keep);
+  }
+}
 async function presSnapshot(){
   const P = pres.P, {w, h} = presAspect(), btn = $('#pShoot');
   btn.disabled = true; $('#presBusy').hidden = false;
   await new Promise(r => setTimeout(r, 30));
   try{
-    const maxTex = P.renderer.capabilities.maxTextureSize || 8192, ss = Math.max(1, Math.min(2, Math.floor(maxTex / Math.max(w, h))));
-    const pr0 = P.renderer.getPixelRatio(), size0 = P.renderer.getSize(new THREE.Vector2());
-    presSetSize(w*ss, h*ss, 1);
-    presRender();
-    const out = document.createElement('canvas'); out.width = w; out.height = h;
-    const cx = out.getContext('2d'); cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high';
-    cx.drawImage(P.renderer.domElement, 0, 0, w*ss, h*ss, 0, 0, w, h);
-    if(pres.wm){
-      const fs = Math.round(Math.min(w, h)*0.032), dark = pres.bg === '#2A2C2E';
-      cx.font = `600 ${fs}px "Bricolage Grotesque", "Segoe UI", sans-serif`; cx.textAlign = 'right'; cx.textBaseline = 'bottom';
-      cx.fillStyle = dark ? 'rgba(255,255,255,.85)' : 'rgba(27,33,30,.78)'; cx.fillText(pres.wm, w - Math.round(w*0.03), h - Math.round(h*0.03));
-    }
-    presSetSize(size0.x, size0.y, pr0); presRender();
-    const blob: Blob = await new Promise(r => out.toBlob(r, 'image/png'));
+    const blob: Blob = await renderPng(w, h, pres.wm);
     const name = isOne() ? `zdjecie_${pres.one.file}_${pres.shot}_${w}x${h}.png`
       : `zdjecie_organizer_${pres.L.drawer.w}x${pres.L.drawer.d}_${pres.shot}_${w}x${h}.png`;
     await env.savePhoto(name, blob);
@@ -387,5 +410,5 @@ export function mountPresentation(e: PresEnv): PresApi {
   $('#pSize').addEventListener('change', ev => { pres.size = ev.target.value; presLayout(); presInfo(); });
   $('#pWm').addEventListener('input', ev => { pres.wm = ev.target.value.trim(); presWm(); });
   $('#pShoot').onclick = presSnapshot;
-  return { open: openPres, close: closePres, isOpen: () => pres.open };
+  return { open: openPres, close: closePres, isOpen: () => pres.open, photo: presPhoto };
 }

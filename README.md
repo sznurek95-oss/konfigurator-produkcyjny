@@ -41,6 +41,21 @@ Układ, który się nie mieści (za wąska, płytka albo niska szuflada), jest s
 wydrukować jako moduł (stos talerzy ⌀ 27 cm przy stole 256 mm), zostaje oznaczony jako „wolne miejsce”.
 Silnik: `src/layout/gotowe.ts`, testy: `tests/uklady.test.js` (szczelne pokrycie na siatce wymiarów i na losowych szufladach).
 
+## Produkcja: płyty, czas z Bambu Studio, numery pozycji, PDF dla klienta
+
+- **Plan płyt druku** (karta „Do wydruku”): moduły zamówienia rozkładane na płyty stołu (`settings.bed`, margines 3 mm,
+  odstęp 4 mm), osobno dla każdego koloru (albo razem — opcja AMS). Każda płyta to osobny 3MF z modułami ułożonymi
+  według planu; otwierasz je w Bambu Studio po kolei albo pobierasz wszystkie w ZIP. Plan dzienny według godzin druku.
+  Silnik: `src/layout/plyty.ts`. Bambu Studio tworzy płyty z 3MF tylko razem z pełnymi ustawieniami projektu
+  (nakładałoby je na profile użytkownika), dlatego płyty są osobnymi plikami.
+- **Czas i filament z Bambu Studio:** po pocięciu płyty „Eksportuj pocięty plik płyty” (.gcode.3mf) i wczytaj go w planie.
+  Odczyt `Metadata/slice_info.config` (`src/export/bambu.ts`, rozpakowanie `src/export/unzip.ts`). Szacunek
+  kalibruje się na wczytanych płytach (mediana z ostatnich 12), a przy komplecie płyt koszt liczony jest z dokładnych wartości.
+- **Numery pozycji** (A1, A2…: litera = rząd od tyłu szuflady, cyfra = kolejny od lewej): na planie, w instrukcji PDF
+  i wytłoczone w dnie modułu (czcionka bez styków po skosie — bryła szczelna). Z numerami każdy egzemplarz to osobny plik/obiekt.
+- **Projekt do akceptacji (PDF):** zdjęcie z trybu prezentacji (`PresApi.photo`), wymiary, numery pozycji, kolory,
+  cena, termin, uwagi; na drugiej stronie plan ułożenia.
+
 ## Tryb prezentacji (zdjęcia do sklepu) — moduł wydzielony
 
 Realistyczne zdjęcia produktowe robi osobny moduł `src/prezentacja/` (scena, światło, materiały, panel).

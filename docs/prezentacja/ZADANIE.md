@@ -53,7 +53,10 @@ Pełny opis typów jest w `src/editor/prezentacja-kontrakt.ts`. W skrócie:
   Wieszak drukuje się na boku, więc warstwy narastają wzdłuż osi z.
 - `env.savePhoto(nazwa, pngBlob)` zapisuje zdjęcie. Nazwa pliku musi zaczynać się od `zdjecie_` i kończyć na `.png`.
 - `env.toast(tekst)` pokazuje komunikat, a `env.closed(subject)` informuje konfigurator, że tryb został zamknięty.
-- Moduł eksportuje `mountPresentation(env)`, która zwraca `{open, close, isOpen}`. Konfigurator wywołuje ją raz przy starcie.
+- Moduł eksportuje `mountPresentation(env)`, która zwraca `{open, close, isOpen, photo}`. Konfigurator wywołuje ją raz przy starcie.
+- **`photo(subject, opts)` musi dalej działać.** Robi zdjęcie PNG bez otwierania panelu (ujęcie, otoczenie, tło, rozmiar).
+  Konfigurator wstawia je do PDF „Projekt do akceptacji” dla klienta, a test interfejsu to sprawdza.
+  Twoje ulepszenia wyglądu mają się pojawić także tam.
 
 ### Elementy panelu, które muszą zostać (`[TEST]` w `widok.ts`)
 

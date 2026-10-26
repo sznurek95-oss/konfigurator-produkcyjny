@@ -232,6 +232,20 @@ table.bom{width:100%;border-collapse:collapse;font-size:12.5px}
 .kitwhere{font-size:12.5px;margin:0}
 .kitnote{font-size:12px;color:var(--warn);margin:0}
 
+/* plan płyt druku */
+#ovPlan .modal{width:min(1120px,100%)}
+.plsum{margin:0}
+.plopts{display:flex;gap:10px 22px;align-items:end;flex-wrap:wrap}
+.plopts .field{width:150px}
+.pldays{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12.5px;color:var(--muted)}
+.pldays b{color:var(--ink);font-weight:600}
+.plgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.plcard{border:1px solid var(--line);background:var(--inset);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:6px}
+.plprev svg{width:100%;display:block}
+.plhead{display:flex;justify-content:space-between;gap:8px;align-items:baseline;font-size:13px}
+.plhead>span{font-size:12px;color:var(--muted);text-align:right}
+.plstat{font-size:12px;color:var(--muted)}
+
 /* automatyczne wypełnienie */
 .fillgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:16px}
 .fillopts{display:flex;flex-direction:column;gap:12px;min-width:0}
@@ -337,18 +351,23 @@ table.bom{width:100%;border-collapse:collapse;font-size:12.5px}
       <section class="card">
         <h2>Do wydruku <small>STL · 3MF</small></h2>
         <div id="bomWrap" class="bomwrap"></div>
+        <button class="btn pri" id="planBtn" type="button">Plan płyt druku</button>
         <div id="slicerBox" class="slicerbox"></div>
         <div class="row">
-          <button class="btn pri grow" id="dlAll" type="button">Pobierz wszystkie (.zip)</button>
+          <button class="btn grow" id="dlAll" type="button">Pobierz wszystkie STL (.zip)</button>
           <button class="btn" id="dl3mf" type="button" hidden>Projekt .3mf</button>
         </div>
-        <button class="btn lay-only" id="pdfBtn" type="button" title="Plan szuflady i lista modułów do wydrukowania albo wysłania klientowi">Instrukcja układania (PDF)</button>
+        <div class="row">
+          <button class="btn lay-only grow" id="pdfBtn" type="button" title="Plan szuflady i lista modułów do włożenia do paczki">Instrukcja (PDF)</button>
+          <button class="btn lay-only grow" id="accBtn" type="button" title="Zdjęcie, wymiary, kolory i cena — do wysłania klientowi przed drukiem">Do akceptacji (PDF)</button>
+        </div>
         <div class="grid3">
           <div class="field"><label for="setTol">Luz (mm)</label><input id="setTol" type="number" min="0" max="3" step="0.1"></div>
           <div class="field"><label for="setBed">Stół (mm)</label><input id="setBed" type="number" min="100" max="1000" step="1"></div>
           <div class="field"><label for="setSnap">Siatka</label><select id="setSnap"><option value="1">1 mm</option><option value="5">5 mm</option><option value="10">10 mm</option></select></div>
         </div>
         <p class="hint">Luz zmniejsza wymiar zewnętrzny modułów, żeby dało się je włożyć obok siebie.</p>
+        <label class="check"><input type="checkbox" id="setPosNo"> Numer pozycji w dnie (A1, A2… jak na planie i w PDF)</label>
         <label class="check"><input type="checkbox" id="setLabel"> Wymiary wklęsłe w dnie modułu</label>
       </section>
 
@@ -524,6 +543,53 @@ table.bom{width:100%;border-collapse:collapse;font-size:12.5px}
     <div class="row" style="justify-content:flex-end">
       <button class="btn" type="button" id="kitCancel">Anuluj</button>
       <button class="btn pri" type="button" id="kitApply">Wstaw do szuflady</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="ovPlan" hidden>
+  <div class="modal">
+    <h3>Plan płyt druku</h3>
+    <p class="lead plsum" id="plSum"></p>
+    <div class="plopts">
+      <label class="check"><input type="checkbox" id="plAms"> Różne kolory na jednej płycie (AMS)</label>
+      <div class="field"><label for="plHours">Godzin druku dziennie</label><input id="plHours" type="number" min="1" max="24" step="1"></div>
+    </div>
+    <div class="pldays" id="plDays"></div>
+    <div class="plgrid" id="plGrid"></div>
+    <p class="hint">Każda płyta to osobny plik 3MF z modułami ułożonymi według planu. W Bambu Studio: otwórz płytę, Pokrój, a potem „Eksportuj pocięty plik płyty” — wczytany tutaj poda dokładny czas i zużycie filamentu, a szacunek nauczy się na nim na przyszłość.</p>
+    <p class="err" id="plErr"></p>
+    <input type="file" id="plFile" accept=".3mf" multiple hidden>
+    <div class="row">
+      <button class="btn" type="button" id="plImport">Wczytaj pocięte pliki z Bambu Studio…</button>
+      <div class="spacer"></div>
+      <button class="btn" type="button" id="plClose">Zamknij</button>
+      <button class="btn pri" type="button" id="plZip">Pobierz wszystkie płyty (.zip)</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="ovAcc" hidden>
+  <div class="modal" style="width:min(560px,100%)">
+    <h3>Projekt do akceptacji</h3>
+    <p class="lead">PDF dla klienta przed drukiem: realistyczne zdjęcie układu, wymiary, numery pozycji, kolory, cena i termin. Na drugiej stronie plan ułożenia.</p>
+    <div class="grid2">
+      <div class="field"><label for="acShop">Sklep (nagłówek)</label><input id="acShop" type="text" maxlength="60" placeholder="np. TwojaSzuflada.pl" style="font-family:var(--f-body)"></div>
+      <div class="field"><label for="acClient">Klient (opcjonalnie)</label><input id="acClient" type="text" maxlength="60" style="font-family:var(--f-body)"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label for="acPrice">Cena dla klienta (zł)</label><input id="acPrice" type="number" min="0" step="0.01"><span class="hint" id="acCost"></span></div>
+      <div class="field"><label for="acTerm">Termin realizacji</label><input id="acTerm" type="text" maxlength="90" style="font-family:var(--f-body)"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label for="acShot">Zdjęcie</label><select id="acShot" style="font-family:var(--f-body)"><option value="hero">Pod kątem</option><option value="top">Z góry</option><option value="front">Z przodu</option></select></div>
+      <div class="field"><label for="acEnv">Szuflada na zdjęciu</label><select id="acEnv" style="font-family:var(--f-body)"><option value="oak">Dąb naturalny</option><option value="walnut">Orzech</option><option value="white">Biały laminat</option><option value="anthracite">Antracyt</option><option value="none">Bez szuflady</option></select></div>
+    </div>
+    <div class="field"><label for="acNotes">Uwagi w dokumencie</label><textarea id="acNotes" rows="3" maxlength="400" style="border:1px solid var(--line);background:var(--inset);border-radius:7px;padding:6px 8px;font:13px var(--f-body);color:var(--ink);resize:vertical"></textarea></div>
+    <p class="err" id="acErr"></p>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn" type="button" id="acCancel">Anuluj</button>
+      <button class="btn pri" type="button" id="acGo">Utwórz PDF</button>
     </div>
   </div>
 </div>

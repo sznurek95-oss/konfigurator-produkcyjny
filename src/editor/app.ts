@@ -8,16 +8,19 @@ import { mountSingle, renderModelTabs, showSingle, refreshSingle, activeModel, p
 import { COLORS, MATS, FLOW, ROSA, ROSA_CF, SERIES, findFil, rosaName, seriesOf } from '../materials/rosa3d.js';
 import { stl } from '../export/stl.js';
 import { zip } from '../export/zip.js';
-import { make3mfBlob } from '../export/threemf.js';
+import { make3mfBlob, make3mfPlacedBlob } from '../export/threemf.js';
+import { planPlates, planDays, fmtDur } from '../layout/plyty.js';
+import { readSliced, plateFromName } from '../export/bambu.js';
 import { buildPdf } from '../export/pdf.js';
 import { desktop } from './desktop.js';
+import { ROW_LETTERS } from '../geometry/text.js';
 import { mountPresentation } from '../prezentacja/prezentacja.js';
 import { MINSZ, EPS, overlap, U, M, mulberry, freeRects, absorbThin, splitLen, spread, tileRect } from '../layout/autofill.js';
 
 const $ = s => document.querySelector(s);
 const KEY = 'szuflada-konfigurator-v1';
 const defCost = () => ({mat:'PLA', waste:5, grams:null, price:80, hours:null, watt:150, kwh:1.10});
-const defSettings = () => ({tol:0.5, bed:256, snap:5, label:true, tone2On:false, tone2Color:'#2B2D2F', tone2Band:5, uniOn:false, uniColor:'#E8E6E1', cost:defCost()});
+const defSettings = () => ({tol:0.5, bed:256, snap:5, label:true, posNo:true, tone2On:false, tone2Color:'#2B2D2F', tone2Band:5, uniOn:false, uniColor:'#E8E6E1', cost:defCost()});
 const dens = () => MATS[state.settings.cost.mat] || 1.24;
 
 let state = {
@@ -58,7 +61,18 @@ function splitParts(g, t){
   const zc = tone2At(t); if(zc == null) return [g];
   return [Object.assign({}, g, {clip:{at:zc, part:'lo'}}), Object.assign({}, g, {clip:{at:zc, part:'hi'}})];
 }
-function exportGeo(t){ const g = mdl(t).spec(t, ctxOf(state.settings.tol, state.settings.label)); g.model = t.model || DEFAULT_MODEL; return g; }
+function exportGeo(t, code){ const g = mdl(t).spec(t, Object.assign(ctxOf(state.settings.tol, state.settings.label), code ? {code} : {})); g.model = t.model || DEFAULT_MODEL; return g; }
+/* ---------- numery pozycji: litera = rząd od tyłu szuflady (A przy tylnej ściance), cyfra = kolejny od lewej ---------- */
+function rowLetter(i){ const L = ROW_LETTERS, n = L.length; return i < n ? L[i] : L[Math.floor(i/n) - 1] + L[i % n]; }
+/** Moduły w kolejności układania (od tylnego lewego rogu, rzędami do przodu) — ta sama w planie, PDF i na wydrukach. */
+function orderedItems(){ return [...state.items].sort((a,b) => (a.y-b.y) || (a.x-b.x)); }
+/** Numer pozycji każdego modułu: Map(id → „A1”). Rząd = moduły o tej samej odległości od tyłu (±0,5 mm). */
+function posCodes(){
+  const m = new Map(); let row = -1, rowY = -Infinity, col = 0;
+  for(const it of orderedItems()){ if(it.y > rowY + 0.5){ row++; rowY = it.y; col = 0; } m.set(it.id, rowLetter(row) + (++col)); }
+  return m;
+}
+const posOn = () => !!state.settings.posNo;
 const meshCache = new Map();
 function meshFor(g){ const k = JSON.stringify(g); if(!meshCache.has(k)) meshCache.set(k, getModel(g.model).mesh(g, g.clip || null)); return meshCache.get(k); }
 const vol = t => meshFor(geo(t, state.settings.tol)).vol;
@@ -108,10 +122,15 @@ function downloadTpl(t){
   if(!(window.claude && window.claude.use)) offer(f.name, new Blob([f.data], {type:'model/stl'}));
   else offer(f.name.replace(/\.stl$/,'.zip'), zip([f]));
 }
+function stlItemFile(it, code){
+  const t = tpl(it.tid), g = exportGeo(t, code);
+  return {name: `${code}_${slug(t.name)}_${fmt(g.W).replace(',','.')}x${fmt(g.D).replace(',','.')}x${fmt(g.H).replace(',','.')}mm.stl`, data: stl(meshFor(g), t.name + ' ' + code)};
+}
 function downloadAll(){
   const used = usage();
   if(!used.length){ toast('W szufladzie nie ma jeszcze modułów.'); return; }
-  const files = used.map(([t,q]) => stlFile(t, q));
+  const codes = posOn() ? posCodes() : null;
+  const files = codes ? orderedItems().map(it => stlItemFile(it, codes.get(it.id))) : used.map(([t,q]) => stlFile(t, q));
   const d = state.drawer;
   offer(`organizer_szuflada_${d.w}x${d.d}.zip`, zip(files));
 }
@@ -183,6 +202,7 @@ function render2d(){
     <text transform="translate(${dy-fs*.35} ${D.d/2}) rotate(-90)" text-anchor="middle" stroke="none">${D.d} mm</text>
     <text x="${D.w/2}" y="${D.d+wallT+fs*1.5}" text-anchor="middle" stroke="none" letter-spacing="${fs*.25}" font-family="IBM Plex Sans, sans-serif" font-weight="600">PRZÓD</text>
   </g>`;
+  const codes = posOn() ? posCodes() : null;
   for(const it of state.items){
     const pv = resizePv && resizePv.id === it.id ? resizePv : null;
     const t = pv ? pv.t : tpl(it.tid), b = pv ? pv.box : box(it), g = geo(t), isSel = it.id === sel, isBad = !pv && bad.has(it.id);
@@ -197,6 +217,9 @@ function render2d(){
         <text x="${b.w/2}" y="${b.d/2 - lf*0.15}" font-family="IBM Plex Sans, sans-serif" font-weight="600">${esc(b.w/lf > t.name.length*0.6 ? t.name : '')}</text>
         <text x="${b.w/2}" y="${b.d/2 + lf*1.05}" font-family="IBM Plex Mono, monospace" font-size="${lf*0.85}" fill-opacity=".75">${fmt(b.w)}×${fmt(b.d)}</text></g>`;
     }
+    if(codes){ const cf = Math.max(big/70, Math.min(fs*0.75, b.w/4, b.d/3)), code = codes.get(it.id);
+      inner += `<g style="pointer-events:none"><rect x="${cf*0.3}" y="${cf*0.3}" width="${cf*(0.62*code.length + 0.5)}" height="${cf*1.35}" rx="${cf*0.3}" fill="var(--panel)" fill-opacity=".9"/>
+        <text x="${cf*0.55}" y="${cf*1.32}" font-size="${cf}" font-family="IBM Plex Mono, monospace" font-weight="600" fill="var(--ink)">${code}</text></g>`; }
     s += `<g class="it" data-id="${it.id}" transform="translate(${b.x} ${b.y})" style="cursor:${drag&&drag.id===it.id?'grabbing':'grab'}">${inner}</g>`;
   }
   // zaznaczany obszar automatycznego wypełnienia
@@ -392,7 +415,7 @@ function duplicate(it){
 }
 function removeItem(it){ state.items = state.items.filter(i => i !== it); sel = null; commit(); }
 document.addEventListener('keydown', e => {
-  if(e.target.closest('input,select,textarea') || !$('#ovTpl').hidden || !$('#ovDrawer').hidden || !$('#ovLay').hidden || !$('#ovFill').hidden || !$('#ovKit').hidden || presApi.isOpen()) return;
+  if(e.target.closest('input,select,textarea') || !$('#ovTpl').hidden || !$('#ovDrawer').hidden || !$('#ovLay').hidden || !$('#ovFill').hidden || !$('#ovKit').hidden || !$('#ovPlan').hidden || !$('#ovAcc').hidden || presApi.isOpen()) return;
   const it = selItem(); if(!it) return;
   const st = e.shiftKey ? 10 : state.settings.snap, D = state.drawer, f = fp(it);
   const mv = (dx,dy) => { it.x = Math.max(0, Math.min(it.x+dx, D.w-f.w)); it.y = Math.max(0, Math.min(it.y+dy, D.d-f.d)); commit(); e.preventDefault(); };
@@ -574,13 +597,19 @@ function refresh(){ renderHeader(); render2d(); renderLib(); renderInspector(); 
 function commit(){ save(); refresh(); }
 
 /* ---------- projekt 3MF + most do Bambu Studio ---------- */
+/** Lista do druku: [moduł, ilość, numer pozycji?]. Z numerami pozycji każdy egzemplarz jest osobną bryłą. */
+function printList(){
+  if(!posOn()) return usage().map(([t, q]) => [t, q, null]);
+  const codes = posCodes(); return orderedItems().map(it => [tpl(it.tid), 1, codes.get(it.id)]);
+}
+function print3mfObject(t, qty, code){
+  const g = exportGeo(t, code), parts = splitParts(g, t), nm = code ? `${code} ${t.name}` : t.name;
+  return {name: nm, qty, size: {w: g.W, d: g.D},
+    parts: parts.length === 1 ? [{name: nm, mesh: meshFor(g)}]
+      : [{name: `${nm} - dół (kolor 1)`, mesh: meshFor(parts[0])}, {name: `${nm} - góra (kolor 2)`, mesh: meshFor(parts[1])}]};
+}
 function make3mf(list){
-  const objects = list.map(([t, qty]) => {
-    const g = exportGeo(t), parts = splitParts(g, t);
-    return {name: t.name, qty, size: {w: g.W, d: g.D},
-      parts: parts.length === 1 ? [{name: t.name, mesh: meshFor(g)}]
-        : [{name: `${t.name} - dół (kolor 1)`, mesh: meshFor(parts[0])}, {name: `${t.name} - góra (kolor 2)`, mesh: meshFor(parts[1])}]};
-  });
+  const objects = list.map(([t, qty, code]) => print3mfObject(t, qty, code));
   return make3mfBlob(objects, state.settings.bed, state.drawer ? `Organizer ${state.drawer.w}x${state.drawer.d}` : 'Organizer');
 }
 const HELPER = 'http://localhost:52845';
@@ -603,8 +632,11 @@ function renderSlicer(){
         : helper.slicer ? 'Pomocnik połączony z Bambu Studio' : 'Pomocnik działa, ale nie znalazł Bambu Studio — plik otworzy się w programie przypisanym do .3mf')
       : 'Uruchom Bambu-most.bat (leży obok tego pliku), żeby wysyłać układ prosto do slicera'}</div>`;
   if(state.settings.tone2On && tone2Heights().length) box.insertAdjacentHTML('beforeend', `<p class="hint">Dwa kolory: w projekcie .3mf każdy moduł ma części „dół” i „góra”. W Bambu Studio zaznacz części „góra” i przypisz im drugi filament z AMS. Bez AMS dodaj zmianę koloru na wysokości ${tone2Heights().map(([z]) => fmt(z) + ' mm').join(', ')}.</p>`);
-  $('#dlAll').classList.toggle('pri', !helper.ok);
-  const b = $('#toSlicer'); if(b) b.onclick = () => { const d = state.drawer; sendToSlicer(usage(), `organizer_${d.w}x${d.d}.3mf`); };
+  const b = $('#toSlicer'); if(b) b.onclick = () => {
+    const r = computePlan();
+    if(r.plates.length === 1 && !r.tooBig.length){ const pl = r.plates[0]; sendBlob(plate3mf(pl, r), plateName(pl, r), pl.pieces.length); return; }
+    openPlan(); toast('Moduły nie mieszczą się na jednej płycie — otwieraj płyty w Bambu Studio po kolei z planu.');
+  };
 }
 async function sendBlob(blob, name, n){
   name = withOrder(name);
@@ -632,7 +664,7 @@ async function sendToSlicer(list, name){
 }
 $('#dl3mf').onclick = () => {
   const used = usage(); if(!used.length){ toast('W szufladzie nie ma jeszcze modułów.'); return; }
-  const d = state.drawer; offer(`organizer_${d.w}x${d.d}.3mf`, make3mf(used));
+  const d = state.drawer; offer(`organizer_${d.w}x${d.d}.3mf`, make3mf(printList()));
 };
 
 /* ---------- kalkulator kosztu ---------- */
@@ -643,9 +675,10 @@ function tone2Grams(){
 function autoCost(){
   let v = 0; state.items.forEach(i => v += vol(tpl(i.tid)));
   const waste = 1 + (state.settings.cost.waste||0)/100;
-  return {g: v/1000*dens()*waste, h: v/FLOW/3600*waste, n: state.items.length};
+  return {g: v/1000*dens()*waste*gramK(), h: v/FLOW/3600*waste*timeK(), n: state.items.length};
 }
 const zl = n => n.toLocaleString('pl-PL', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' zł';
+function costTotal(){ const c = state.settings.cost, a = autoCost(), g = c.grams == null ? a.g : c.grams, h = c.hours == null ? a.h : c.hours; return g/1000*(c.price||0) + h*(c.watt||0)/1000*(c.kwh||0); }
 function renderCost(){
   const c = state.settings.cost, a = autoCost();
   const g = c.grams == null ? a.g : c.grams, h = c.hours == null ? a.h : c.hours;
@@ -665,7 +698,7 @@ function renderCost(){
       <span class="tot">Razem</span><span class="tot">${zl(tot)}</span>
       ${a.n ? `<span>Średnio na moduł (${a.n} szt.)</span><span>${zl(tot/a.n)}</span>` : ''}
     </div>
-    <p class="hint">Zużycie i czas to szacunek dla pełnego wypełnienia. Po pocięciu w slicerze wpisz jego wartości, będzie dokładniej.</p>`;
+    <p class="hint">${calibInfo()} Dokładne wartości: „Plan płyt druku” → „Wczytaj pocięte pliki z Bambu Studio”.</p>`;
 }
 function bindCost(){
   const c = state.settings.cost;
@@ -689,11 +722,12 @@ function bindSettings(){
   if(typeof bindTone2 === 'function' && $('#t2On')) bindTone2();
   bindCost();
   if(typeof bindUni === 'function') bindUni();
-  $('#setLabel').checked = !!state.settings.label; $('#setTol').value = state.settings.tol; $('#setBed').value = state.settings.bed; $('#setSnap').value = state.settings.snap;
+  $('#setPosNo').checked = posOn(); $('#setLabel').checked = !!state.settings.label; $('#setTol').value = state.settings.tol; $('#setBed').value = state.settings.bed; $('#setSnap').value = state.settings.snap;
 }
 $('#setTol').addEventListener('change', e => { const v = parseFloat(e.target.value); state.settings.tol = isFinite(v) ? Math.max(0, Math.min(3, v)) : 0.5; e.target.value = state.settings.tol; commit(); });
 $('#setBed').addEventListener('change', e => { const v = parseFloat(e.target.value); state.settings.bed = isFinite(v) ? Math.max(100, Math.min(1000, v)) : 220; e.target.value = state.settings.bed; commit(); });
 $('#setLabel').addEventListener('change', e => { state.settings.label = e.target.checked; save(); if(view==='3d') rebuild3d(); });
+$('#setPosNo').addEventListener('change', e => { state.settings.posNo = e.target.checked; commit(); });
 $('#setSnap').addEventListener('change', e => { state.settings.snap = +e.target.value; save(); });
 $('#dlAll').addEventListener('click', downloadAll);
 
@@ -1040,11 +1074,10 @@ function pdfHeader(pg, title, sub){
   ptext(pg.x, sub, 15, 26.5, {pt:9, color:MUTED});
   pg.x.strokeStyle = LINE; pg.x.lineWidth = 0.3; pg.x.beginPath(); pg.x.moveTo(15,30); pg.x.lineTo(pg.w-15,30); pg.x.stroke();
 }
-function pdfFooter(pg, n, total){
-  ptext(pg.x, 'Konfigurator szuflady · instrukcja układania', 15, pg.h-8, {pt:7.5, color:MUTED});
+function pdfFooter(pg, n, total, label = 'Konfigurator szuflady · instrukcja układania'){
+  ptext(pg.x, label, 15, pg.h-8, {pt:7.5, color:MUTED});
   ptext(pg.x, `Strona ${n} z ${total}`, pg.w-15, pg.h-8, {pt:7.5, color:MUTED, align:'right'});
 }
-function orderedItems(){ return [...state.items].sort((a,b) => (a.y-b.y) || (a.x-b.x)); }
 function planPage(order, sub){
   const D = state.drawer, pg = pdfPage(D.w > D.d*1.1), x = pg.x;
   pdfHeader(pg, 'Plan ułożenia modułów', sub);
@@ -1067,6 +1100,7 @@ function planPage(order, sub){
   ptext(x, 'TYŁ', X(D.w/2), Y(0) - 12, {pt:7.5, wt:'600', color:MUTED, align:'center'});
   ptext(x, 'PRZÓD  ·  strona, od której otwierasz szufladę', X(D.w/2), Y(D.d) + 7, {pt:8, wt:'600', color:MUTED, align:'center'});
   // moduły
+  const codes = posOn() ? posCodes() : null, nr = (it, i) => codes ? codes.get(it.id) : String(i+1);
   order.forEach((it, i) => {
     const t = tpl(it.tid), b = box(it), g = geo(t), {cells} = compartments(g);
     x.fillStyle = hexA(t.color, 0.55); x.fillRect(X(b.x), Y(b.y), b.w*sc, b.d*sc);
@@ -1074,18 +1108,19 @@ function planPage(order, sub){
     cells.forEach(c => { const r = rotRect(c, t, it.rot); x.fillRect(X(b.x+r[0]), Y(b.y+r[1]), (r[2]-r[0])*sc, (r[3]-r[1])*sc); });
     x.strokeStyle = '#2A302D'; x.lineWidth = 0.3; x.strokeRect(X(b.x), Y(b.y), b.w*sc, b.d*sc);
     const cx = X(b.x + b.w/2), cy = Y(b.y + b.d/2), small = Math.min(b.w, b.d)*sc;
-    const r = Math.max(2.2, Math.min(4, small*0.22));
-    x.fillStyle = '#fff'; x.strokeStyle = INK; x.lineWidth = 0.35; x.beginPath(); x.arc(cx, cy - (small > 14 ? 2 : 0), r, 0, Math.PI*2); x.fill(); x.stroke();
-    ptext(x, String(i+1), cx, cy - (small > 14 ? 2 : 0) + r*0.38, {pt: r*2.1/PT/1.0*0.5 + 2, wt:'700', align:'center'});
+    const r = Math.max(2.2, Math.min(4, small*0.22)), label = nr(it, i), rw = Math.max(r, r*0.62*label.length);
+    x.fillStyle = '#fff'; x.strokeStyle = INK; x.lineWidth = 0.35; x.beginPath(); x.roundRect ? x.roundRect(cx - rw, cy - (small > 14 ? 2 : 0) - r, rw*2, r*2, r) : x.arc(cx, cy - (small > 14 ? 2 : 0), r, 0, Math.PI*2); x.fill(); x.stroke();
+    ptext(x, label, cx, cy - (small > 14 ? 2 : 0) + r*0.38, {pt: (r*2.1/PT/1.0*0.5 + 2) * (label.length > 2 ? 0.85 : 1), wt:'700', align:'center'});
     if(small > 14) ptext(x, `${fmt(b.w)}×${fmt(b.d)}`, cx, cy + r + 2.2, {pt: Math.min(7.5, b.w*sc/3.2), fam:'IBM Plex Mono', align:'center'});
   });
-  ptext(x, 'Numery to kolejność układania: zaczynaj od tylnego lewego rogu, potem w prawo i rzędami do przodu.', 15, pg.h - 15, {pt:8.5, color:MUTED});
+  ptext(x, codes ? 'Numer pozycji jest też wytłoczony w dnie modułu: litera = rząd od tyłu szuflady (A przy tylnej ściance), cyfra = kolejny moduł od lewej.'
+    : 'Numery to kolejność układania: zaczynaj od tylnego lewego rogu, potem w prawo i rzędami do przodu.', 15, pg.h - 15, {pt:8.5, color:MUTED});
   return pg;
 }
 function listPages(order, sub){
   const pages = []; let pg, y;
-  const D = state.drawer, used = usage(), nrs = new Map();
-  order.forEach((it,i) => { const a = nrs.get(it.tid) || []; a.push(i+1); nrs.set(it.tid, a); });
+  const D = state.drawer, used = usage(), nrs = new Map(), codes = posOn() ? posCodes() : null, nr = (it, i) => codes ? codes.get(it.id) : String(i+1);
+  order.forEach((it,i) => { const a = nrs.get(it.tid) || []; a.push(nr(it, i)); nrs.set(it.tid, a); });
   const fresh = () => { pg = pdfPage(false); pages.push(pg); pdfHeader(pg, 'Moduły i rozmieszczenie', sub); y = 40; };
   const need = h => { if(y + h > pg.h - 18) fresh(); };
   const h2 = s => { need(14); ptext(pg.x, s, 15, y + 4, {pt:12, wt:'700', fam:'Bricolage Grotesque'}); y += 9; };
@@ -1104,23 +1139,23 @@ function listPages(order, sub){
     ptext(x, `Wymiar: ${fmt(t.w)} × ${fmt(t.d)} × ${fmt(g.H)} mm   ·   wydruk: ${fmt(eg.W)} × ${fmt(eg.D)} × ${fmt(eg.H)} mm (luz ${fmt(state.settings.tol)} mm)`, 45, y + 10.5, {pt:8.5, fam:'IBM Plex Mono', color:MUTED});
     ptext(x, `Przegródki: ${t.nx} × ${t.ny} (${t.nx*t.ny} szt., każda ok. ${fmt(cw,0)} × ${fmt(cd,0)} mm)   ·   ścianka ${fmt(t.wall)} mm, dno ${fmt(t.floor)} mm`, 45, y + 15.5, {pt:8.5, color:MUTED});
     const lab = eg.engrave && eg.engrave.length ? `Napis na dnie: ${mdl(t).labelText(t, ctxOf(), true)}   ·   ` : '';
-    pf(x, 8.5); const nrLine = wrapText(x, `${lab}Numery na planie: ${nrs.get(t.id).join(', ')}`, pg.w - 60);
+    pf(x, 8.5); const nrLine = wrapText(x, `${lab}${codes ? 'Pozycje (numer w dnie)' : 'Numery na planie'}: ${nrs.get(t.id).join(', ')}`, pg.w - 60);
     nrLine.forEach((l, k) => ptext(x, l, 45, y + 20.5 + k*4.2, {pt:8.5, color:MUTED}));
     y += Math.max(28, 22 + nrLine.length*4.2);
     pg.x.strokeStyle = '#E4E8E3'; pg.x.lineWidth = 0.2; pg.x.beginPath(); pg.x.moveTo(15, y-2); pg.x.lineTo(pg.w-15, y-2); pg.x.stroke();
   }
   // tabela rozmieszczenia
   y += 4; h2('2. Rozmieszczenie w szufladzie');
-  const cols = [[15,'Nr','left'],[27,'Moduł','left'],[95,'W szufladzie (szer. × głęb.)','left'],[155,'Od lewej','right'],[175,'Od tyłu','right'],[195,'Obrót','right']];
+  const cols = [[15,'Nr','left'],[30,'Moduł','left'],[95,'W szufladzie (szer. × głęb.)','left'],[155,'Od lewej','right'],[175,'Od tyłu','right'],[195,'Obrót','right']];
   const head = () => { need(10); cols.forEach(([cx,l,al]) => ptext(pg.x, l, cx, y+3, {pt:7.5, wt:'600', color:MUTED, align:al})); y += 5; pg.x.strokeStyle = LINE; pg.x.lineWidth = 0.25; pg.x.beginPath(); pg.x.moveTo(15,y); pg.x.lineTo(pg.w-15,y); pg.x.stroke(); y += 1; };
   head();
   order.forEach((it, i) => {
     if(y + 6 > pg.h - 18){ fresh(); head(); }
     const t = tpl(it.tid), b = box(it), yy = y + 4.3;
     if(i % 2 === 0){ pg.x.fillStyle = '#F5F7F4'; pg.x.fillRect(15, y, pg.w-30, 6); }
-    pg.x.fillStyle = t.color; pg.x.fillRect(22, y+1.8, 2.4, 2.4);
-    ptext(pg.x, String(i+1), 15, yy, {pt:8.5, wt:'700'});
-    ptext(pg.x, t.name, 27, yy, {pt:8.5});
+    pg.x.fillStyle = t.color; pg.x.fillRect(25.5, y+1.8, 2.4, 2.4);
+    ptext(pg.x, nr(it, i), 15, yy, {pt:8.5, wt:'700'});
+    ptext(pg.x, t.name, 30, yy, {pt:8.5});
     ptext(pg.x, `${fmt(b.w)} × ${fmt(b.d)} mm`, 95, yy, {pt:8.5, fam:'IBM Plex Mono'});
     ptext(pg.x, `${fmt(b.x)} mm`, 155, yy, {pt:8.5, fam:'IBM Plex Mono', align:'right'});
     ptext(pg.x, `${fmt(b.y)} mm`, 175, yy, {pt:8.5, fam:'IBM Plex Mono', align:'right'});
@@ -1173,7 +1208,7 @@ async function makeInstruction(){
     pages.forEach((pg, i) => pdfFooter(pg, i+1, pages.length));
     await offer(`instrukcja_${slug(name)}.pdf`, buildPdf(pages, 'Instrukcja: ' + name));
   }catch(e){ toast('Nie udało się przygotować PDF: ' + (e && e.message || e)); }
-  finally{ btn.disabled = false; btn.textContent = 'Instrukcja PDF'; }
+  finally{ btn.disabled = false; btn.textContent = 'Instrukcja (PDF)'; }
 }
 $('#pdfBtn').onclick = makeInstruction;
 
@@ -1385,6 +1420,137 @@ $('#kitApply').onclick = () => {
   toast(`Wstawiono układ „${k.name}”: ${r.cells.length} szt. modułów, ${r.stats.kinds} rodz.${r.gaps.length ? ' Zostało wolne miejsce.' : ''}`);
 };
 
+
+/* ---------- plan płyt druku ---------- */
+// Moduły zamówienia rozkładane na płyty stołu (osobno dla każdego koloru), czas i filament: szacunek
+// skalibrowany na wcześniej pociętych płytach albo dokładne wartości z pociętych plików Bambu Studio.
+const median = a => { const v = [...a].sort((x, y) => x - y), n = v.length; return n ? (n % 2 ? v[(n-1)/2] : (v[n/2-1] + v[n/2]) / 2) : 1; };
+const timeK = () => median((state.settings.calib || []).map(c => c.t));
+const gramK = () => median((state.settings.calib || []).map(c => c.g));
+function calibInfo(){
+  const n = (state.settings.calib || []).length;
+  return n ? `Czas i zużycie: szacunek skalibrowany na ${n} ${n === 1 ? 'pociętej płycie' : 'pociętych płytach'} (czas ×${fmt(timeK(), 2)}, filament ×${fmt(gramK(), 2)}).`
+    : 'Czas i zużycie to szacunek z objętości modułów.';
+}
+const hashStr = str => { let h = 5381; for(let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0; return h.toString(36); };
+function colorLabel(hex){ return rosaName(hex) || hex.toUpperCase(); }
+/** Części do druku: każdy moduł w szufladzie osobno (z numerem pozycji, gdy włączony). */
+function planPieces(){
+  const s = state.settings, codes = posOn() ? posCodes() : null, waste = 1 + (s.cost.waste || 0) / 100;
+  return orderedItems().map(it => {
+    const t = tpl(it.tid), code = codes ? codes.get(it.id) : null, g = exportGeo(t, code), v = meshFor(geo(t, s.tol)).vol;
+    const base = (s.uniOn ? s.uniColor : t.color).toUpperCase(), two = tone2At(t) != null;
+    const colors = two ? [base, s.tone2Color.toUpperCase()] : [base];
+    return {id: it.id, w: g.W, d: g.D, group: s.planAms ? 'AMS' : colors.join('+'), colors,
+      mins: v / FLOW / 60 * waste, grams: v / 1000 * dens() * waste, tid: t.id, code};
+  });
+}
+function computePlan(){
+  const s = state.settings, r = planPlates(planPieces(), {bed: s.bed, margin: 5, gap: 4, overheadMin: 6});
+  r.sig = hashStr(JSON.stringify([s.bed, s.tol, s.posNo, s.tone2On && s.tone2Band, r.plates.map(p => p.pieces.map(q => [q.id, q.tid, q.x, q.y, q.rot]))]));
+  return r;
+}
+function plateColors(pl){ return [...new Set(pl.pieces.flatMap(p => p.colors))]; }
+function plateName(pl, r){
+  const d = state.drawer, cols = plateColors(pl).map(c => slug(colorLabel(c))).join('+');
+  return `plyta-${pl.index}-z-${r.plates.length}_${cols}_organizer_${d.w}x${d.d}.3mf`;
+}
+function plate3mf(pl, r){
+  const objs = [], idx = new Map(), placements = [];
+  for(const p of pl.pieces){
+    const key = p.code ? 'i' + p.id : 't' + p.tid;
+    if(!idx.has(key)){ idx.set(key, objs.length); objs.push(print3mfObject(tpl(p.tid), 1, p.code)); }
+    placements.push({obj: idx.get(key), x: p.x, y: p.y, rot: p.rot});
+  }
+  return make3mfPlacedBlob(objs, placements, `Płyta ${pl.index} z ${r.plates.length} — organizer ${state.drawer.w}x${state.drawer.d}`);
+}
+/** Wyniki cięcia dla bieżącego planu (z pliku z Bambu Studio), albo {} gdy plan się zmienił. */
+const slicedFor = r => state.sliced && state.sliced.sig === r.sig ? state.sliced.plates : {};
+function plateSvg(pl){
+  const B = state.settings.bed, t = tpl, codes = pl.pieces.some(p => p.code);
+  let sv = `<svg viewBox="-4 -4 ${B + 8} ${B + 8}" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="${B}" height="${B}" rx="6" fill="var(--floor)" stroke="var(--wall)" stroke-width="1.5"/>`;
+  for(const p of pl.pieces){
+    const y = B - p.y - p.pd, c = p.colors[0];   // przód stołu na dole
+    sv += `<rect x="${p.x}" y="${y}" width="${p.pw}" height="${p.pd}" rx="2" fill="${c}" fill-opacity=".85" stroke="#000" stroke-opacity=".35"/>`;
+    if(p.colors[1]) sv += `<rect x="${p.x}" y="${y}" width="${p.pw}" height="${p.pd}" rx="2" fill="none" stroke="${p.colors[1]}" stroke-width="4"/>`;
+    const f = Math.min(14, p.pw / 3.2, p.pd / 1.6);
+    if(codes && f > 5) sv += `<text x="${p.x + p.pw/2}" y="${y + p.pd/2 + f*0.36}" font-size="${f}" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-weight="600" fill="#111" stroke="#fff" stroke-width="${f/5}" paint-order="stroke">${p.code}</text>`;
+  }
+  return sv + `<text x="${B/2}" y="${B + 3}" font-size="9" text-anchor="middle" fill="var(--muted)">przód stołu</text></svg>`;
+}
+let planR = null;
+function renderPlan(){
+  if(!state.drawer || !state.items.length){ $('#plGrid').innerHTML = '<p class="hint">Ułóż najpierw moduły w szufladzie.</p>'; $('#plSum').textContent = ''; $('#plDays').innerHTML = ''; return; }
+  const r = planR = computePlan(), real = slicedFor(r), tk = timeK(), gk = gramK();
+  const mins = r.plates.map(pl => real[pl.index] ? real[pl.index].s / 60 : pl.mins * tk);
+  const grams = r.plates.map(pl => real[pl.index] ? real[pl.index].g : pl.grams * gk);
+  const nReal = r.plates.filter(pl => real[pl.index]).length, groups = new Set(r.plates.map(p => p.group)).size;
+  $('#plSum').innerHTML = `<b>${r.plates.length} ${r.plates.length === 1 ? 'płyta' : r.plates.length < 5 ? 'płyty' : 'płyt'}</b> · ok. <b>${fmtDur(mins.reduce((a, b) => a + b, 0))}</b> · ${fmt(grams.reduce((a, b) => a + b, 0), 0)} g filamentu`
+    + (state.settings.planAms ? ' · kolory razem (AMS)' : ` · ${groups} ${groups === 1 ? 'kolor' : 'kolory'}`)
+    + `<br><span class="hint">${nReal === r.plates.length ? 'Czas i filament z pociętych plików Bambu Studio.' : nReal ? `Dla ${nReal} z ${r.plates.length} płyt dane z Bambu Studio, reszta to szacunek.` : calibInfo()}</span>`;
+  const H = Math.max(1, Math.min(24, +state.settings.planHours || 16)), days = planDays(mins, H);
+  $('#plDays').innerHTML = days.map((d, i) => `<span><b>Dzień ${i + 1}:</b> ${d.length === 1 ? 'płyta ' + (d[0] + 1) : `płyty ${d[0] + 1}–${d[d.length - 1] + 1}`} (${fmtDur(d.reduce((a, k) => a + mins[k], 0))})</span>`).join('')
+    + (days.length > 5 ? `<span class="kitnote">Druk zajmie ${days.length} dni przy ${H} h dziennie — więcej niż 5 dni roboczych.</span>` : '');
+  $('#plErr').textContent = r.tooBig.length ? `Za duże na stół ${state.settings.bed} mm (zmniejsz albo podziel moduł): ${r.tooBig.map(p => (p.code ? p.code + ' ' : '') + tpl(p.tid).name).join(', ')}.` : '';
+  $('#plGrid').innerHTML = r.plates.map((pl, i) => {
+    const rl = real[pl.index], cols = plateColors(pl);
+    return `<div class="plcard"><div class="plprev">${plateSvg(pl)}</div>
+      <div class="plhead"><b>Płyta ${pl.index}</b><span>${cols.map(c => `<span class="dot" style="background:${c}"></span>${esc(colorLabel(c))}`).join(' + ')}</span></div>
+      <div class="plstat">${pl.pieces.length} szt. · ${rl ? '' : 'ok. '}${fmtDur(mins[i])} · ${fmt(grams[i], 0)} g · zajęcie ${fmt(pl.fill * 100, 0)}%${rl ? ' <span class="chip ok" title="' + esc(rl.file) + '">Bambu Studio</span>' : ''}</div>
+      <div class="row">${helper.ok ? `<button class="btn sm pri" data-pl="open" data-i="${i}" type="button">Otwórz w Bambu Studio</button>` : ''}<button class="btn sm" data-pl="dl" data-i="${i}" type="button">Pobierz 3MF</button></div></div>`;
+  }).join('');
+  $('#plZip').disabled = !r.plates.length;
+}
+function openPlan(){
+  if(!state.drawer || !state.items.length){ toast('Ułóż najpierw moduły w szufladzie.'); return; }
+  $('#plAms').checked = !!state.settings.planAms; $('#plHours').value = state.settings.planHours || 16;
+  renderPlan(); $('#ovPlan').hidden = false;
+}
+$('#planBtn').onclick = openPlan;
+$('#plClose').onclick = () => { $('#ovPlan').hidden = true; };
+$('#plAms').addEventListener('change', e => { state.settings.planAms = e.target.checked; save(); renderPlan(); });
+$('#plHours').addEventListener('change', e => { const v = parseFloat(e.target.value); state.settings.planHours = isFinite(v) ? Math.max(1, Math.min(24, v)) : 16; save(); renderPlan(); });
+$('#plGrid').addEventListener('click', e => {
+  const b = e.target.closest('[data-pl]'); if(!b || !planR) return;
+  const pl = planR.plates[+b.dataset.i], blob = plate3mf(pl, planR), name = plateName(pl, planR);
+  if(b.dataset.pl === 'open') sendBlob(blob, name, pl.pieces.length); else offer(name, blob);
+});
+$('#plZip').onclick = async () => {
+  const r = planR || computePlan(); if(!r.plates.length) return;
+  const files = [];
+  for(const pl of r.plates) files.push({name: withOrder(plateName(pl, r)), data: new Uint8Array(await plate3mf(pl, r).arrayBuffer())});
+  offer(`plyty_${r.plates.length}_organizer_${state.drawer.w}x${state.drawer.d}.zip`, zip(files));
+};
+$('#plImport').onclick = () => $('#plFile').click();
+$('#plFile').addEventListener('change', async e => {
+  const files = [...e.target.files]; e.target.value = ''; if(!files.length) return;
+  const r = planR || computePlan(), got = [], skipped = [];
+  if(!state.sliced || state.sliced.sig !== r.sig) state.sliced = {sig: r.sig, plates: {}};
+  for(const f of files){
+    let sl = null;
+    try{ sl = await readSliced(new Uint8Array(await f.arrayBuffer())); }catch(err){ skipped.push(`${f.name} (${err.message || err})`); continue; }
+    if(!sl){ skipped.push(`${f.name} (plik nie był pocięty — w Bambu Studio: Pokrój, potem Eksportuj pocięty plik płyty)`); continue; }
+    const byName = plateFromName(f.name), of = f.name.match(/plyta-\d+-z-(\d+)/i);
+    if(of && +of[1] !== r.plates.length){ skipped.push(`${f.name} (plik z planu na ${of[1]} płyt, a teraz plan ma ${r.plates.length} — układ się zmienił)`); continue; }
+    // plik jednej płyty zapisanej przez konfigurator (numer w nazwie) albo projekt ze wszystkimi płytami w tej samej kolejności
+    const pairs = byName && sl.length === 1 ? [[byName, sl[0]]] : sl.length === r.plates.length ? sl.map(p => [p.index, p]) : r.plates.length === 1 && sl.length === 1 ? [[1, sl[0]]] : [];
+    if(!pairs.length){ skipped.push(`${f.name} (nie wiadomo, której płyty dotyczy — zostaw nazwę pliku nadaną przez konfigurator)`); continue; }
+    for(const [idx, p] of pairs){
+      const pl = r.plates.find(x => x.index === idx); if(!pl) continue;
+      state.sliced.plates[idx] = {s: p.seconds, g: p.grams, file: f.name};
+      const kt = (p.seconds / 60) / pl.mins, kg = p.grams / pl.grams;   // szacunek bez kalibracji → rzeczywistość
+      if(kt > 0.3 && kt < 4 && kg > 0.3 && kg < 4){ state.settings.calib = [...(state.settings.calib || []), {t: kt, g: kg}].slice(-12); }
+      got.push(idx);
+    }
+  }
+  // komplet płyt z Bambu Studio: koszt liczony z dokładnych wartości
+  const real = state.sliced.plates, all = r.plates.every(pl => real[pl.index]);
+  if(all){ state.settings.cost.grams = Math.round(r.plates.reduce((a, pl) => a + real[pl.index].g, 0)); state.settings.cost.hours = Math.round(r.plates.reduce((a, pl) => a + real[pl.index].s, 0) / 360) / 10; }
+  commit(); renderPlan();
+  toast((got.length ? `Wczytano dane z Bambu Studio dla płyt: ${[...new Set(got)].sort((a, b) => a - b).join(', ')}.` + (all ? ' Koszt liczony z dokładnych wartości.' : '') : 'Nie wczytano żadnej płyty.')
+    + (skipped.length ? ' Pominięto: ' + skipped.join('; ') : ''));
+});
+
 /* ---------- tryb prezentacji (osobny moduł: src/prezentacja/, kontrakt: ./prezentacja-kontrakt.ts) ---------- */
 const presApi = mountPresentation({
   layout(){
@@ -1412,6 +1578,81 @@ const presApi = mountPresentation({
   closed: subj => { if(subj === 'single') refreshSingle(); else if(view === '3d') rebuild3d(); },
 });
 $('#presBtn').onclick = () => presApi.open('layout');
+
+/* ---------- projekt do akceptacji (PDF dla klienta) ---------- */
+const accDef = () => ({shop:'', term:'do 5 dni roboczych od zaksięgowania wpłaty', notes:'Wymiary modułów z dokładnością ±1 mm. Kolory według wzornika Rosa3D — odcień na ekranie i na zdjęciu może się nieznacznie różnić od wydruku.', shot:'hero', env:'oak'});
+function openAcc(){
+  if(!state.drawer || !state.items.length){ toast('Ułóż najpierw moduły w szufladzie.'); return; }
+  const a = state.settings.acc = Object.assign(accDef(), state.settings.acc || {});
+  $('#acShop').value = a.shop; $('#acClient').value = ''; $('#acTerm').value = a.term; $('#acNotes').value = a.notes;
+  $('#acShot').value = a.shot; $('#acEnv').value = a.env; $('#acPrice').value = state.settings.accPriceDraft || '';
+  $('#acCost').textContent = `Koszt wytworzenia (filament + prąd): ok. ${zl(costTotal())}.`;
+  $('#acErr').textContent = ''; $('#ovAcc').hidden = false; setTimeout(() => $('#acPrice').focus(), 30);
+}
+async function makeAcceptance(){
+  const price = parseFloat(String($('#acPrice').value).replace(',', '.'));
+  if(!isFinite(price) || price <= 0){ $('#acErr').textContent = 'Wpisz cenę dla klienta.'; return; }
+  const a = state.settings.acc = Object.assign(accDef(), state.settings.acc || {}, {shop: $('#acShop').value.trim(), term: $('#acTerm').value.trim(), notes: $('#acNotes').value.trim(), shot: $('#acShot').value, env: $('#acEnv').value});
+  state.settings.accPriceDraft = ''; save();
+  const client = $('#acClient').value.trim(), btn = $('#acGo'); btn.disabled = true; btn.textContent = 'Renderuję zdjęcie…';
+  try{
+    try{ await Promise.all(['400 10px "IBM Plex Sans"','600 10px "IBM Plex Sans"','700 10px "IBM Plex Sans"','400 10px "IBM Plex Mono"','700 10px "Bricolage Grotesque"'].map(f => document.fonts.load(f))); }catch(e){}
+    const photo = await presApi.photo('layout', {shot: a.shot, env: a.env, w: 1600, h: 1200});
+    const img = photo ? await createImageBitmap(photo) : null;
+    const D = state.drawer, order = orderedItems(), codes = posOn() ? posCodes() : null, nr = (it, i) => codes ? codes.get(it.id) : String(i + 1);
+    const no = orderNo(), date = new Date().toLocaleDateString('pl-PL', {day:'numeric', month:'long', year:'numeric'});
+    const sub = [no ? `Zamówienie nr ${no}` : '', client ? `Klient: ${client}` : '', date].filter(Boolean).join('  ·  ');
+    const pg = pdfPage(false), x = pg.x;
+    if(a.shop) ptext(x, a.shop, 15, 12, {pt:9.5, wt:'700', color:ACC});
+    ptext(x, 'Projekt organizera do akceptacji', 15, 21, {pt:17, wt:'700', fam:'Bricolage Grotesque'});
+    ptext(x, sub, 15, 27.5, {pt:9, color:MUTED});
+    x.strokeStyle = LINE; x.lineWidth = 0.3; x.beginPath(); x.moveTo(15, 31); x.lineTo(pg.w - 15, 31); x.stroke();
+    let y = 35;
+    if(img){ const W = pg.w - 30, H = W * img.height / img.width; x.drawImage(img, 15, y, W, H); y += H + 6; }
+    // dane projektu
+    const used = usage(), cols = [...new Set(state.items.map(i => state.settings.uniOn ? state.settings.uniColor : tpl(i.tid).color))];
+    const row = (k, v, yy) => { ptext(x, k, 15, yy, {pt:9, color:MUTED}); ptext(x, v, 62, yy, {pt:9.5, wt:'600'}); };
+    row('Szuflada (wnętrze)', `${fmt(D.w)} × ${fmt(D.d)} × ${fmt(D.h)} mm`, y); y += 5.6;
+    row('Moduły', `${state.items.length} szt., ${used.length} ${used.length === 1 ? 'rodzaj' : used.length < 5 ? 'rodzaje' : 'rodzajów'}`, y); y += 5.6;
+    row('Kolory', cols.map(c => rosaName(c) || 'własny kolor').filter((v, i, arr) => arr.indexOf(v) === i).join(', ') + (state.settings.tone2On ? ` + górny pas: ${rosaName(state.settings.tone2Color) || 'własny kolor'}` : ''), y); y += 7.5;
+    // lista modułów
+    ptext(x, 'Moduł', 15, y, {pt:7.5, wt:'600', color:MUTED}); ptext(x, 'Wymiar (mm)', 92, y, {pt:7.5, wt:'600', color:MUTED});
+    ptext(x, codes ? 'Pozycje (numer w dnie)' : 'Numery na planie', 125, y, {pt:7.5, wt:'600', color:MUTED}); ptext(x, 'Szt.', pg.w - 15, y, {pt:7.5, wt:'600', color:MUTED, align:'right'});
+    y += 1.6; x.strokeStyle = LINE; x.beginPath(); x.moveTo(15, y); x.lineTo(pg.w - 15, y); x.stroke(); y += 4.2;
+    const priceTop = pg.h - 52;
+    for(const [t, q] of used){
+      const list = order.map((it, i) => it.tid === t.id ? nr(it, i) : null).filter(Boolean).join(', ');
+      pf(x, 8.5); const lines = wrapText(x, list, pg.w - 15 - 125 - 12);
+      if(y + lines.length * 4 > priceTop - 4){ ptext(x, '… pełna lista na planie na następnej stronie', 15, y, {pt:8.5, color:MUTED}); y += 5; break; }
+      x.fillStyle = state.settings.uniOn ? state.settings.uniColor : t.color; x.fillRect(15, y - 2.6, 2.6, 2.6);
+      ptext(x, t.name, 20, y, {pt:8.5}); ptext(x, `${fmt(t.w)} × ${fmt(t.d)} × ${fmt(tplH(t))}`, 92, y, {pt:8.5, fam:'IBM Plex Mono'});
+      lines.forEach((l, k) => ptext(x, l, 125, y + k * 4, {pt:8.5, fam:'IBM Plex Mono'}));
+      ptext(x, String(q), pg.w - 15, y, {pt:8.5, wt:'600', align:'right'});
+      y += Math.max(1, lines.length) * 4 + 1.4;
+    }
+    // cena, termin, uwagi
+    let py = priceTop;
+    x.fillStyle = '#F1F4F2'; x.fillRect(15, py - 6, pg.w - 30, 44);
+    ptext(x, 'Cena', 20, py, {pt:9, color:MUTED}); ptext(x, zl(price), 20, py + 8, {pt:18, wt:'700', fam:'Bricolage Grotesque'});
+    ptext(x, 'Termin realizacji', 85, py, {pt:9, color:MUTED});
+    pf(x, 9.5, '600'); wrapText(x, a.term || '—', pg.w - 20 - 85).slice(0, 2).forEach((l, k) => ptext(x, l, 85, py + 6 + k * 4.6, {pt:9.5, wt:'600'}));
+    py += 17;
+    if(a.notes){ pf(x, 8.5); wrapText(x, a.notes, pg.w - 40).slice(0, 3).forEach((l, k) => ptext(x, l, 20, py + k * 4.2, {pt:8.5, color:MUTED})); py += 13; }
+    pf(x, 8.5, '600'); wrapText(x, 'Jeśli projekt się zgadza, odpisz „Akceptuję projekt” — wtedy przekazujemy go do druku. Zmiany wymiarów, kolorów lub układu wprowadzimy przed drukiem.', pg.w - 40)
+      .forEach((l, k) => ptext(x, l, 20, py + k * 4.2, {pt:8.5, wt:'600'}));
+    const sub2 = `${D.w} × ${D.d} × ${D.h} mm  ·  ${state.items.length} modułów` + (no ? `  ·  zamówienie ${no}` : '');
+    const pages = [pg, planPage(order, sub2)];
+    pages.forEach((p2, i) => pdfFooter(p2, i + 1, pages.length, (a.shop ? a.shop + ' · ' : '') + 'projekt do akceptacji'));
+    await offer(`projekt_do_akceptacji_${D.w}x${D.d}.pdf`, buildPdf(pages, 'Projekt do akceptacji' + (no ? ' ' + no : '')));
+    $('#ovAcc').hidden = true;
+    if(!img) toast('Uwaga: nie udało się wyrenderować zdjęcia — PDF ma tylko plan.');
+  }catch(e){ $('#acErr').textContent = 'Nie udało się przygotować PDF: ' + (e && e.message || e); }
+  finally{ btn.disabled = false; btn.textContent = 'Utwórz PDF'; }
+}
+$('#accBtn').onclick = openAcc;
+$('#acCancel').onclick = () => { state.settings.accPriceDraft = $('#acPrice').value; save(); $('#ovAcc').hidden = true; };
+$('#acGo').onclick = makeAcceptance;
+
 $('#sgShoot').onclick = () => presApi.open('single');
 
 /* ---------- toast ---------- */

@@ -53,30 +53,47 @@ export function labelText(t: Variant, drawerH: number | null, full: boolean): st
   return full ? `${n(t.w)}x${n(t.d)}x${n(heightOf(t, drawerH))}` : `${n(t.w)}x${n(t.d)}`;
 }
 
-/** Napis wklęsły (wygrawerowany) w dnie, czytelny od góry: przy przedniej krawędzi największej przegródki. */
-export function labelRects(g: DrawerSpec, t: Variant, drawerH: number | null): HRect[] {
+/** Napis wklęsły (wygrawerowany) w dnie, czytelny od góry: przy przedniej krawędzi największej przegródki.
+ *  `code` (numer pozycji, np. „A3”) jest grawerowany większy, przy samej krawędzi, a wymiar mniejszy nad nim
+ *  (gdy się mieści). `dims` = false: tylko numer pozycji (napis z wymiarem wyłączony w ustawieniach).
+ *  Bez `code` wynik jest identyczny jak w poprzednich wersjach (pliki do druku bez zmian). */
+export function labelRects(g: DrawerSpec, t: Variant, drawerH: number | null, code?: string, dims = true): HRect[] {
   const { cells } = compartments(g);
   const cell = cells.reduce((best, c) => {
     const ar = (c[2] - c[0]) * (c[3] - c[1]), br = (best[2] - best[0]) * (best[3] - best[1]);
     return ar > br + 0.01 || (Math.abs(ar - br) <= 0.01 && c[3] > best[3]) ? c : best;
   }, cells[0]);
   const cw = cell[2] - cell[0] - 3, cd = cell[3] - cell[1] - 3, top = g.floor - (g.floor >= 1.2 ? 0.6 : g.floor / 2);
-  for (const full of [true, false]) {
-    const tr = textRuns(labelText(t, drawerH, full));
+  // jeden napis: poziomo przy przedniej krawędzi (od `bottom` w górę) albo pionowo przy lewej, skala ≤ pMax mm/piksel
+  const place = (text: string, pMax: number, hFrac: number, bottom: number, availD: number): { rects: HRect[]; h: number } | null => {
+    const tr = textRuns(text);
     for (const rot of [false, true]) {
-      const availW = rot ? cd : cw, availH = rot ? cw : cd;
-      const p = Math.min(0.8, availW / tr.w, availH * 0.5 / tr.h);
+      const availW = rot ? availD : cw, availH = rot ? cw : availD;
+      const p = Math.min(pMax, availW / tr.w, availH * hFrac / tr.h);
       if (p < 0.5) continue;
       const TW = tr.w * p, TH = tr.h * p;
       if (!rot) {
-        const x0 = (cell[0] + cell[2]) / 2 - TW / 2, y0 = cell[3] - 1.5 - TH;
-        return tr.runs.map(([a, b, c, d]) => [x0 + a * p, y0 + b * p, x0 + c * p, y0 + d * p, top] as HRect);
+        const x0 = (cell[0] + cell[2]) / 2 - TW / 2, y0 = bottom - TH;
+        return { rects: tr.runs.map(([a, b, c, d]) => [x0 + a * p, y0 + b * p, x0 + c * p, y0 + d * p, top] as HRect), h: TH };
       }
       const x0 = cell[0] + 1.5, y1 = (cell[1] + cell[3]) / 2 + TW / 2;
-      return tr.runs.map(([a, b, c, d]) => [x0 + b * p, y1 - c * p, x0 + d * p, y1 - a * p, top] as HRect);
+      return { rects: tr.runs.map(([a, b, c, d]) => [x0 + b * p, y1 - c * p, x0 + d * p, y1 - a * p, top] as HRect), h: Infinity };
     }
+    return null;
+  };
+  if (!code) {
+    for (const full of [true, false]) { const r = place(labelText(t, drawerH, full), 0.8, 0.5, cell[3] - 1.5, cd); if (r) return r.rects; }
+    return [];
   }
-  return [];
+  const c = place(code, 1.4, 0.45, cell[3] - 1.5, cd);
+  if (!c) return [];
+  if (!dims || !isFinite(c.h)) return c.rects;
+  const left = cd - c.h - 1.5;   // miejsce nad numerem
+  for (const full of [true, false]) {
+    const d = place(labelText(t, drawerH, full), 0.6, 0.9, cell[3] - 1.5 - c.h - 1.5, left);
+    if (d && isFinite(d.h)) return [...c.rects, ...d.rects];
+  }
+  return c.rects;
 }
 
 /** Zmniejsza liczbę przegródek, gdy wychodzą węższe niż 8 mm. */
@@ -127,7 +144,7 @@ export default defineModel<DrawerSpec>({
   height: (v, ctx) => heightOf(v, ctx.drawerH),
   spec(v, ctx: BuildCtx) {
     const g = specOf(v, ctx.drawerH, ctx.tol);
-    if (ctx.label && g.floor >= 0.8) g.engrave = labelRects(g, v, ctx.drawerH);
+    if ((ctx.label || ctx.code) && g.floor >= 0.8) g.engrave = labelRects(g, v, ctx.drawerH, ctx.code, ctx.label);
     return g;
   },
   plan2d: g => compartments(g),

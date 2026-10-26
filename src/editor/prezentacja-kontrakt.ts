@@ -79,9 +79,25 @@ export interface PresEnv {
   closed(subject: PresSubject): void;
 }
 
+/** Ustawienia zdjęcia robionego bez otwierania panelu. */
+export interface PresPhotoOpts {
+  /** Ujęcie: 'hero' (domyślnie), 'top', 'front', 'detail'. */
+  shot?: string;
+  /** Otoczenie: szuflada ('oak', 'walnut', 'white', 'anthracite', 'none') albo grzejnik ('white', 'anthracite', 'chrome', 'none'). */
+  env?: string;
+  /** Tło (#RRGGBB albo 'transparent'), domyślnie białe studio #F4F4F2. */
+  bg?: string;
+  /** Rozmiar w pikselach, domyślnie 1600 × 1600. */
+  w?: number;
+  h?: number;
+}
+
 /** Co tryb prezentacji daje konfiguratorowi. */
 export interface PresApi {
   open(subject: PresSubject): void;
   close(): void;
   isOpen(): boolean;
+  /** Zdjęcie PNG bez otwierania panelu (konfigurator używa go w PDF do akceptacji dla klienta).
+   *  null = brak danych albo panel jest otwarty. Ustawienia panelu po zdjęciu wracają do poprzednich. */
+  photo(subject: PresSubject, opts?: PresPhotoOpts): Promise<Blob | null>;
 }

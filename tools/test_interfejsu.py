@@ -37,6 +37,25 @@ with sync_playwright() as p:
         assert 'nachodzi' not in pg.inner_text('body') and 'wystaje' not in pg.inner_text('body')
         pg.click('#kitBtn'); pg.click('#kitList [data-k=przyprawy]'); pg.click('#kitApply'); pg.wait_for_timeout(200)
     step('gotowe układy szuflad', kits)
+    def plates():
+        import shutil, tempfile, zipfile
+        assert pg.locator('#svg .it text').filter(has_text='A1').count() >= 1, 'brak numerów pozycji na planie'
+        pg.click('#planBtn'); pg.wait_for_timeout(400)
+        n = pg.locator('.plcard').count(); assert n >= 1
+        with pg.expect_download() as d: pg.click('#plZip')
+        z = zipfile.ZipFile(d.value.path()); assert len(z.namelist()) == n, z.namelist()
+        fx = os.path.join(os.path.dirname(URL[7:]), '..', 'tests', 'fixtures', 'zamowienie_plyta-2-z-3_bialy.gcode.3mf')
+        tmp = os.path.join(tempfile.mkdtemp(), f'zamowienie_plyta-1-z-{n}_bialy.gcode.3mf'); shutil.copy(fx, tmp)
+        pg.set_input_files('#plFile', tmp); pg.wait_for_timeout(500)
+        assert pg.locator('.plcard .chip.ok').count() == 1, pg.inner_text('#toast')
+        pg.click('#plClose')
+    step('plan płyt druku + wczytanie pociętego pliku', plates)
+    def accept():
+        pg.click('#accBtn'); pg.fill('#acPrice', '199')
+        with pg.expect_download(timeout=300000) as d: pg.click('#acGo')
+        assert d.value.suggested_filename.endswith('.pdf') and 'akceptacji' in d.value.suggested_filename
+        assert open(d.value.path(), 'rb').read(5) == b'%PDF-'
+    step('projekt do akceptacji (PDF ze zdjęciem)', accept)
     def lay():
         pg.click('#layoutsBtn'); pg.fill('#lName', 'Test'); pg.click('#formLay button[type=submit]'); pg.click('#lClose')
     step('zapis układu', lay)

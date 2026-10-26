@@ -61,3 +61,47 @@ export function threemfEntries(modelXml: string): ZipEntry[] {
 export function make3mfBlob(objects: Print3mfObject[], bed: number, title: string): Blob {
   return new Blob(zipParts(threemfEntries(model3mfXml(objects, bed, title))) as BlobPart[], { type: 'model/3mf' });
 }
+
+/** Część ułożona na płycie: obiekt (indeks w `objects`), lewy przedni narożnik na płycie i obrót o 90°. */
+export interface Placement3mf { obj: number; x: number; y: number; rot: boolean }
+
+/** Projekt 3MF jednej płyty: obiekty ustawione dokładnie tam, gdzie wskazał plan płyt (bez automatycznego układania). */
+export function model3mfPlacedXml(objects: Print3mfObject[], placements: Placement3mf[], title: string): string {
+  let objs = '', items = '', oid = 0;
+  const top: number[] = [];
+  const meshObj = (mesh: Mesh, name: string) => {
+    const P = mesh.pos, idx = new Map<string, number>(), verts: string[][] = [], tris: number[] = [];
+    for (let i = 0; i < P.length; i += 3) {
+      const k = nf(P[i]) + ' ' + nf(P[i + 1]) + ' ' + nf(P[i + 2]);
+      let n = idx.get(k); if (n === undefined) { n = verts.length; idx.set(k, n); verts.push(k.split(' ')); }
+      tris.push(n);
+    }
+    oid++;
+    objs += `<object id="${oid}" name="${xesc(name)}" type="model"><mesh><vertices>` +
+      verts.map(v => `<vertex x="${v[0]}" y="${v[1]}" z="${v[2]}"/>`).join('') + '</vertices><triangles>';
+    for (let i = 0; i < tris.length; i += 3) objs += `<triangle v1="${tris[i]}" v2="${tris[i + 1]}" v3="${tris[i + 2]}"/>`;
+    objs += '</triangles></mesh></object>';
+    return oid;
+  };
+  for (const ob of objects) {
+    if (ob.parts.length === 1) top.push(meshObj(ob.parts[0].mesh, ob.parts[0].name));
+    else {
+      const ids = ob.parts.map(p => meshObj(p.mesh, p.name));
+      oid++; objs += `<object id="${oid}" name="${xesc(ob.name)}" type="model"><components>${ids.map(i => `<component objectid="${i}"/>`).join('')}</components></object>`;
+      top.push(oid);
+    }
+  }
+  for (const p of placements) {
+    const ob = objects[p.obj];
+    // obrót o +90° wokół z: (x, y) → (−y, x); bryła zajmuje wtedy x ∈ [−d, 0], więc przesunięcie o d
+    items += p.rot ? `<item objectid="${top[p.obj]}" transform="0 1 0 -1 0 0 0 0 1 ${nf(p.x + ob.size.d)} ${nf(p.y)} 0"/>`
+      : `<item objectid="${top[p.obj]}" transform="1 0 0 0 1 0 0 0 1 ${nf(p.x)} ${nf(p.y)} 0"/>`;
+  }
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="pl-PL" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">` +
+    `<metadata name="Title">${xesc(title)}</metadata><metadata name="Application">Konfigurator szuflady</metadata>` +
+    `<resources>${objs}</resources><build>${items}</build></model>`;
+}
+
+export function make3mfPlacedBlob(objects: Print3mfObject[], placements: Placement3mf[], title: string): Blob {
+  return new Blob(zipParts(threemfEntries(model3mfPlacedXml(objects, placements, title))) as BlobPart[], { type: 'model/3mf' });
+}

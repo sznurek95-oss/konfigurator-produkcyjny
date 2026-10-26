@@ -34,6 +34,8 @@ def run(url, sc):
         w, d, h = sc['dims']
         pg.fill('#dW', str(w)); pg.fill('#dD', str(d)); pg.fill('#dH', str(h)); pg.click('text=Zapisz wymiary')
         pg.fill('#setBed', '220'); pg.press('#setBed', 'Tab')  # stara wersja miała domyślnie 220 mm
+        # numery pozycji w dnie (nowa funkcja) zmieniają bryły celowo — bramka sprawdza resztę, więc je wyłącza
+        if pg.locator('#setPosNo').count(): pg.uncheck('#setPosNo')
         if sc.get('label') is False: pg.uncheck('#setLabel')
         if 'tol' in sc: pg.fill('#setTol', str(sc['tol'])); pg.press('#setTol', 'Tab')
         if 'hall' in sc: pg.fill('#hAll', str(sc['hall'])); pg.click('#hAllApply')
