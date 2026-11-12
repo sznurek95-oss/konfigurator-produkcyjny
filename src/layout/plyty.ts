@@ -23,6 +23,9 @@ export interface PlacedPiece extends PlatePiece {
   rot: boolean;
   pw: number;
   pd: number;
+  /** Ułożenie po przekątnej stołu (część dłuższa niż stół): obrót o ang stopni wokół środka części,
+   *  środek na środku stołu; x, y, pw, pd opisują wtedy prostokąt otaczający. */
+  ang?: number;
 }
 export interface Plate {
   /** Numer płyty od 1. */
@@ -86,10 +89,15 @@ export function planPlates(pieces: PlatePiece[], o: PlateOpts): PlatePlan {
   const margin = o.margin ?? 3, gap = o.gap ?? 4, over = o.overheadMin ?? 6, MIN_MARGIN = 1;
   const S = o.bed - 2 * margin + gap;   // pole użytkowe powiększone o odstęp (każda część ma odstęp z prawej i z tyłu)
   const usable = (o.bed - 2 * margin) ** 2;
-  const tooBig: PlatePiece[] = [], solo: PlatePiece[] = [], groups = new Map<string, PlatePiece[]>();
+  const tooBig: PlatePiece[] = [], solo: PlatePiece[] = [], diag: PlatePiece[] = [], groups = new Map<string, PlatePiece[]>();
+  const room = o.bed - 2 * MIN_MARGIN;
   for (const p of pieces) {
     const a = Math.min(p.w, p.d), b = Math.max(p.w, p.d);
-    if (a + gap > S + 1e-6 || b + gap > S + 1e-6) { (b <= o.bed - 2 * MIN_MARGIN + 1e-6 ? solo : tooBig).push(p); continue; }
+    if (a + gap > S + 1e-6 || b + gap > S + 1e-6) {
+      // za długa wzdłuż boku stołu: sama na płycie, a gdy i tak za długa — po przekątnej (prostokąt obrócony o 45°
+      // zajmuje (a + b) / √2 w obu kierunkach)
+      (b <= room + 1e-6 ? solo : (a + b) / Math.SQRT2 <= room + 1e-6 ? diag : tooBig).push(p); continue;
+    }
     if (!groups.has(p.group)) groups.set(p.group, []);
     groups.get(p.group)!.push(p);
   }
@@ -119,6 +127,13 @@ export function planPlates(pieces: PlatePiece[], o: PlateOpts): PlatePlan {
     const rot = p.w > p.d, pw = rot ? p.d : p.w, pd = rot ? p.w : p.d;
     plates.push({ index: 0, group: p.group, pieces: [{ ...p, x: (o.bed - pw) / 2, y: (o.bed - pd) / 2, rot, pw, pd }],
       mins: p.mins + over, grams: p.grams, fill: (p.w * p.d) / (o.bed - 2 * MIN_MARGIN) ** 2 });
+  }
+  // dłuższe niż stół: po przekątnej od tylnego lewego do przedniego prawego narożnika — z dala od przedniego
+  // lewego narożnika, w którym drukarki Bambu Lab mają strefę wyłączoną z druku
+  for (const p of diag) {
+    const ang = p.w >= p.d ? -45 : 45, side = (p.w + p.d) / Math.SQRT2, c = (o.bed - side) / 2;
+    plates.push({ index: 0, group: p.group, pieces: [{ ...p, x: c, y: c, rot: false, pw: side, pd: side, ang }],
+      mins: p.mins + over, grams: p.grams, fill: (p.w * p.d) / room ** 2 });
   }
   plates.forEach((p, i) => p.index = i + 1);
   return { plates, tooBig };

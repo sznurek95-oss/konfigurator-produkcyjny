@@ -48,6 +48,18 @@ with sync_playwright() as p:
         tmp = os.path.join(tempfile.mkdtemp(), f'zamowienie_plyta-1-z-{n}_bialy.gcode.3mf'); shutil.copy(fx, tmp)
         pg.set_input_files('#plFile', tmp); pg.wait_for_timeout(500)
         assert pg.locator('.plcard .chip.ok').count() == 1, pg.inner_text('#toast')
+        # wszystko w jednym pliku: każdy moduł dokładnie raz, z filamentem; projekt „komplet” z Bambu Studio daje sumy
+        with pg.expect_download() as d: pg.click('#plAll')
+        assert d.value.suggested_filename.startswith('komplet_'), d.value.suggested_filename
+        za = zipfile.ZipFile(d.value.path()); model = za.read('3D/3dmodel.model').decode(); cfg = za.read('Metadata/model_settings.config').decode()
+        assert model.count('<item ') == pg.locator('.it').count(), (model.count('<item '), pg.locator('.it').count())
+        assert cfg.count('key="extruder"') >= 1
+        info = '<?xml version="1.0" encoding="UTF-8"?><config>' + ''.join(f'<plate><metadata key="index" value="{i}"/><metadata key="prediction" value="{s}"/><metadata key="weight" value="{g}"/></plate>' for i, s, g in [(1, 7200, 100), (2, 3600, 50.5), (3, 1800, 20)]) + '</config>'
+        kp = os.path.join(tempfile.mkdtemp(), 'ZAM1_komplet_12-szt_organizer.3mf')
+        with zipfile.ZipFile(kp, 'w') as zk: zk.writestr('Metadata/slice_info.config', info)
+        pg.set_input_files('#plFile', kp); pg.wait_for_timeout(500)
+        assert '3 płyty' in pg.inner_text('#toast') and '171 g' in pg.inner_text('#toast'), pg.inner_text('#toast')
+        assert 'projektu Bambu Studio' in pg.inner_text('#plSum'), pg.inner_text('#plSum')
         pg.click('#plClose')
     step('plan płyt druku + wczytanie pociętego pliku', plates)
     def accept():

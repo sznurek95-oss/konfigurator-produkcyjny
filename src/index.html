@@ -51,7 +51,7 @@ button,input,select{font:inherit;color:inherit}
 .verchip{border:0;background:none;color:var(--muted);font:500 12px var(--f-mono);cursor:pointer;padding:4px 6px;border-radius:6px}
 .verchip:hover{color:var(--ink);background:var(--raise)}
 .verchip.new{color:var(--accent);font-weight:600}
-.updbar{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:40;display:flex;align-items:center;gap:12px;flex-wrap:wrap;max-width:calc(100vw - 32px);
+.updbar{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:21;display:flex;align-items:center;gap:12px;flex-wrap:wrap;max-width:calc(100vw - 32px);
   background:var(--panel);border:1px solid var(--accent);border-radius:10px;padding:10px 12px 10px 16px;box-shadow:var(--shadow)}
 .updbar b{font-weight:600}
 .updbar .hint{margin:0}
@@ -559,14 +559,15 @@ table.bom{width:100%;border-collapse:collapse;font-size:12.5px}
     </div>
     <div class="pldays" id="plDays"></div>
     <div class="plgrid" id="plGrid"></div>
-    <p class="hint">Każda płyta to osobny plik 3MF z modułami ułożonymi według planu. W Bambu Studio: otwórz płytę, Pokrój, a potem „Eksportuj pocięty plik płyty” — wczytany tutaj poda dokładny czas i zużycie filamentu, a szacunek nauczy się na nim na przyszłość.</p>
+    <p class="hint"><b>Wszystko naraz:</b> jeden plik ze wszystkimi modułami — w Bambu Studio naciśnij A (Rozmieść), płyty dodadzą się same; po pocięciu zapisz projekt i wczytaj go tutaj. <b>Albo płyta po płycie:</b> każda płyta to osobny plik 3MF ułożony według planu; po pocięciu „Eksportuj pocięty plik płyty”. Wczytane pliki podają dokładny czas i zużycie filamentu, a szacunek uczy się na nich na przyszłość.</p>
     <p class="err" id="plErr"></p>
     <input type="file" id="plFile" accept=".3mf" multiple hidden>
     <div class="row">
       <button class="btn" type="button" id="plImport">Wczytaj pocięte pliki z Bambu Studio…</button>
       <div class="spacer"></div>
       <button class="btn" type="button" id="plClose">Zamknij</button>
-      <button class="btn pri" type="button" id="plZip">Pobierz wszystkie płyty (.zip)</button>
+      <button class="btn" type="button" id="plZip">Płyty osobno (.zip)</button>
+      <button class="btn pri" type="button" id="plAll">Wszystko w jednym pliku (3MF)</button>
     </div>
   </div>
 </div>

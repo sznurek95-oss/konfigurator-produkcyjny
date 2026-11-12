@@ -43,6 +43,10 @@ Silnik: `src/layout/gotowe.ts`, testy: `tests/uklady.test.js` (szczelne pokrycie
 
 ## Produkcja: płyty, czas z Bambu Studio, numery pozycji, PDF dla klienta
 
+- **Wyślij wszystko do Bambu Studio**: jeden plik `komplet_N-szt_….3mf` ze wszystkimi modułami, bez względu na liczbę płyt
+  i rozmiar. Filamenty są przypisane w `Metadata/model_settings.config`; w Bambu Studio „Rozmieść” (A) samo dodaje płyty.
+  Moduły dłuższe niż stół, które mieszczą się po przekątnej, plan układa pod kątem 45° na osobnej płycie; większe trafiają
+  do pliku mimo to (leżą obok płyt). Pocięty projekt „komplet” wczytany w planie daje łączny czas i zużycie filamentu.
 - **Plan płyt druku** (karta „Do wydruku”): moduły zamówienia rozkładane na płyty stołu (`settings.bed`, margines 3 mm,
   odstęp 4 mm), osobno dla każdego koloru (albo razem — opcja AMS). Każda płyta to osobny 3MF z modułami ułożonymi
   według planu; otwierasz je w Bambu Studio po kolei albo pobierasz wszystkie w ZIP. Plan dzienny według godzin druku.

@@ -8,7 +8,7 @@ import { mountSingle, renderModelTabs, showSingle, refreshSingle, activeModel, p
 import { COLORS, MATS, FLOW, ROSA, ROSA_CF, SERIES, findFil, rosaName, seriesOf } from '../materials/rosa3d.js';
 import { stl } from '../export/stl.js';
 import { zip } from '../export/zip.js';
-import { make3mfBlob, make3mfPlacedBlob } from '../export/threemf.js';
+import { make3mfBlob, make3mfPlacedBlob, make3mfAllBlob } from '../export/threemf.js';
 import { planPlates, planDays, fmtDur } from '../layout/plyty.js';
 import { readSliced, plateFromName } from '../export/bambu.js';
 import { buildPdf } from '../export/pdf.js';
@@ -563,8 +563,8 @@ function renderBom(){
   let tq = 0, tg = 0;
   const rows = used.map(([t,q]) => {
     const g = geo(t, state.settings.tol), gr = grams(t)*q; tq += q; tg += gr;
-    const tooBig = Math.max(g.W,g.D) > bed + EPS || Math.min(g.W,g.D) > bed + EPS || g.H > bed;
-    return `<tr><td><span class="dot" style="background:${t.color}"></span>${esc(t.name)}<div class="meta" style="font:11.5px var(--f-mono);color:var(--muted)">${fmt(g.W)}×${fmt(g.D)}×${fmt(g.H)}</div>${tooBig?`<div class="warnline">Większy niż stół ${bed} mm</div>`:''}</td><td class="n">${q}</td><td class="n">${fmt(gr,0)} g</td></tr>`;
+    const tooBig = Math.max(g.W,g.D) > bed - 2 + EPS || g.H > bed, diag = tooBig && g.H <= bed && (g.W + g.D) / Math.SQRT2 <= bed - 2 + EPS;
+    return `<tr><td><span class="dot" style="background:${t.color}"></span>${esc(t.name)}<div class="meta" style="font:11.5px var(--f-mono);color:var(--muted)">${fmt(g.W)}×${fmt(g.D)}×${fmt(g.H)}</div>${diag?`<div class="hint" style="margin:2px 0 0">Dłuższy niż stół — drukowany po przekątnej</div>`:tooBig?`<div class="warnline">Większy niż stół ${bed} mm, także po przekątnej</div>`:''}</td><td class="n">${q}</td><td class="n">${fmt(gr,0)} g</td></tr>`;
   }).join('');
   $('#bomWrap').innerHTML = `<table class="bom"><thead><tr><th>Moduł</th><th style="text-align:right">Szt.</th><th style="text-align:right">${esc(state.settings.cost.mat)}</th></tr></thead><tbody>${rows}</tbody>
     <tfoot><tr><td>Razem</td><td class="n">${tq}</td><td class="n">≈ ${fmt(tg,0)} g</td></tr></tfoot></table>
@@ -626,32 +626,85 @@ function renderSlicer(){
   const box = $('#slicerBox'), used = usage().length;
   $('#dl3mf').hidden = inClaude; $('#dlAll').style.gridColumn = inClaude ? '1 / -1' : '';
   if(inClaude){ box.innerHTML = `<p class="hint">Wysyłanie prosto do Bambu Studio działa w wersji offline, razem z pomocnikiem Bambu-most.bat.</p>`; return; }
-  box.innerHTML = `<button class="btn ${helper.ok?'pri':''}" id="toSlicer" type="button" ${helper.ok && used && !helper.busy ? '' : 'disabled'}>${helper.busy ? 'Wysyłam…' : 'Otwórz w Bambu Studio'}</button>
+  box.innerHTML = `<button class="btn ${helper.ok?'pri':''}" id="toSlicer" type="button" title="Wszystkie moduły w jednym pliku, bez względu na liczbę płyt i rozmiar" ${helper.ok && used && !helper.busy ? '' : 'disabled'}>${helper.busy ? 'Wysyłam…' : 'Wyślij wszystko do Bambu Studio'}</button>
     <div class="st ${helper.ok?'on':''}"><i></i>${helper.ok
       ? (desktop.on ? (helper.slicer ? 'Bambu Studio znalezione — projekt zapisze się w folderze zleceń i otworzy w slicerze' : 'Nie znaleziono Bambu Studio — plik otworzy się w programie przypisanym do .3mf')
         : helper.slicer ? 'Pomocnik połączony z Bambu Studio' : 'Pomocnik działa, ale nie znalazł Bambu Studio — plik otworzy się w programie przypisanym do .3mf')
       : 'Uruchom Bambu-most.bat (leży obok tego pliku), żeby wysyłać układ prosto do slicera'}</div>`;
   if(state.settings.tone2On && tone2Heights().length) box.insertAdjacentHTML('beforeend', `<p class="hint">Dwa kolory: w projekcie .3mf każdy moduł ma części „dół” i „góra”. W Bambu Studio zaznacz części „góra” i przypisz im drugi filament z AMS. Bez AMS dodaj zmianę koloru na wysokości ${tone2Heights().map(([z]) => fmt(z) + ' mm').join(', ')}.</p>`);
-  const b = $('#toSlicer'); if(b) b.onclick = () => {
-    const r = computePlan();
-    if(r.plates.length === 1 && !r.tooBig.length){ const pl = r.plates[0]; sendBlob(plate3mf(pl, r), plateName(pl, r), pl.pieces.length); return; }
-    openPlan(); toast('Moduły nie mieszczą się na jednej płycie — otwieraj płyty w Bambu Studio po kolei z planu.');
-  };
+  if(used){
+    // lekka wersja (bez budowania brył): kolory i rozmiary z szablonów
+    const cols = filamentColors(), sz = sizeClasses();
+    box.insertAdjacentHTML('beforeend', `<p class="hint">Jeden plik ze wszystkimi modułami. Jeśli nie mieszczą się na jednej płycie, w Bambu Studio naciśnij <b>A</b> (Rozmieść) — program sam doda brakujące płyty.`
+      + (cols.length > 1 ? ` Filamenty: ${cols.map((c, i) => `<b>${i + 1}</b> <span class="dot" style="background:${c}"></span>${esc(colorLabel(c))}`).join(', ')}. Żeby kolory nie mieszały się na płytach, w ustawieniach rozmieszczania wyłącz „wiele materiałów na jednej płycie”.` : '')
+      + (sz.diag ? ` Dłuższe niż stół (${sz.diag} szt.) idą po przekątnej płyty.` : '')
+      + (sz.big ? ` <span class="warnline">${sz.big} szt. nie ${sz.big === 1 ? 'zmieści' : 'zmieszczą'} się na stole nawet po przekątnej — Bambu Studio odłoży ${sz.big === 1 ? 'ją' : 'je'} obok płyt.</span>` : '') + '</p>');
+  }
+  const b = $('#toSlicer'); if(b) b.onclick = () => sendAll();
 }
-async function sendBlob(blob, name, n){
+/** Kolory filamentów w kolejności numerów (1, 2, …): kolor modułów w kolejności pozycji, potem drugi kolor pasa. */
+function filamentColors(){
+  const s = state.settings, out = [];
+  const add = c => { c = c.toUpperCase(); if(!out.includes(c)) out.push(c); };
+  for(const it of orderedItems()) add(s.uniOn ? s.uniColor : tpl(it.tid).color);
+  if(s.tone2On && state.items.some(it => tone2At(tpl(it.tid)) != null)) add(s.tone2Color);
+  return out;
+}
+/** Ile sztuk trzeba ułożyć po przekątnej stołu, a ile nie mieści się wcale (z wymiarów szablonów). */
+function sizeClasses(){
+  const B = state.settings.bed, gap = 4, S = B - 2*5 + gap, room = B - 2;
+  let diag = 0, big = 0;
+  for(const [t, q] of usage()){
+    const g = geo(t, state.settings.tol), a = Math.min(g.W, g.D), b = Math.max(g.W, g.D);
+    if(a + gap > S || b + gap > S){ if(b <= room) continue; if((a + b) / Math.SQRT2 <= room) diag += q; else big += q; }
+  }
+  return {diag, big};
+}
+/** Całe zamówienie w jednym pliku: moduły ułożone płytami jak w planie (siatka płyt jak w Bambu Studio),
+ *  za dużych nie pomijamy — leżą za płytami; każdy obiekt ma numer filamentu wg koloru. */
+function allBlob(r){
+  const B = state.settings.bed, step = B * 1.2, n = r.plates.length + (r.tooBig.length ? 1 : 0), cols = Math.max(1, Math.ceil(Math.sqrt(n)));
+  const cols2 = filamentColors(), fil = c => cols2.indexOf(c.toUpperCase()) + 1 || 1;
+  const objs = [], placements = [], fils = [], idx = new Map();
+  const objFor = p => {
+    const key = p.code ? 'i' + p.id : 't' + p.tid;
+    if(!idx.has(key)){
+      idx.set(key, objs.length); const ob = print3mfObject(tpl(p.tid), 1, p.code);
+      objs.push(ob); fils.push(ob.parts.length > 1 ? [fil(p.colors[0]), fil(p.colors[1] || p.colors[0])] : fil(p.colors[0]));
+    }
+    return idx.get(key);
+  };
+  r.plates.forEach((pl, k) => {
+    const ox = (k % cols) * step, oy = -Math.floor(k / cols) * step;
+    for(const p of pl.pieces) placements.push(p.ang != null ? {obj: objFor(p), x: ox + p.x + p.pw/2, y: oy + p.y + p.pd/2, rot: false, ang: p.ang} : {obj: objFor(p), x: ox + p.x, y: oy + p.y, rot: p.rot});
+  });
+  // za duże na stół: w ostatnim polu siatki, jedna za drugą
+  const k = r.plates.length; let x = (k % cols) * step, y0 = -Math.floor(k / cols) * step;
+  for(const p of r.tooBig){ const o = objFor(p), ob = objs[o]; placements.push({obj: o, x, y: y0, rot: false}); x += ob.size.w + 10; }
+  const d = state.drawer;
+  return make3mfAllBlob(objs, placements, fils, `Zamówienie: ${placements.length} szt. — organizer ${d.w}x${d.d}`);
+}
+function allName(r){ const d = state.drawer, n = r.plates.reduce((a, pl) => a + pl.pieces.length, 0) + r.tooBig.length; return `komplet_${n}-szt_organizer_${d.w}x${d.d}.3mf`; }
+function sendAll(){
+  if(!state.drawer || !state.items.length){ toast('W szufladzie nie ma jeszcze modułów.'); return; }
+  const r = computePlan(), n = r.plates.reduce((a, pl) => a + pl.pieces.length, 0) + r.tooBig.length;
+  return sendBlob(allBlob(r), allName(r), n, r.plates.length > 1 || r.tooBig.length
+    ? `Wysłano wszystkie moduły (${n} szt.). W Bambu Studio naciśnij A (Rozmieść) — płyty dodadzą się same.` : null);
+}
+async function sendBlob(blob, name, n, msg = null){
   name = withOrder(name);
   helper.busy = true; renderSlicer();
   try{
     if(desktop.on){
       await desktop.open(await desktop.save(name, blob));
-      toast(`Otwieram w Bambu Studio: ${n} ${n===1?'element':n<5?'elementy':'elementów'}. Plik jest też w folderze zleceń.`);
+      toast(msg ? msg + ' Plik jest też w folderze zleceń.' : `Otwieram w Bambu Studio: ${n} ${n===1?'element':n<5?'elementy':'elementów'}. Plik jest też w folderze zleceń.`);
       return;
     }
     const body = await blob.arrayBuffer();
     const r = await fetch(HELPER + '/open?name=' + encodeURIComponent(name), {method:'POST', body});
     const j = await r.json();
     if(!j.ok) throw new Error(j.error || 'błąd pomocnika');
-    toast(`Wysłano do Bambu Studio: ${n} ${n===1?'element':n<5?'elementy':'elementów'}. Jeśli nie mieszczą się na płycie, użyj „Rozmieść” (A).`);
+    toast(msg || `Wysłano do Bambu Studio: ${n} ${n===1?'element':n<5?'elementy':'elementów'}. Jeśli nie mieszczą się na płycie, użyj „Rozmieść” (A).`);
   }catch(e){
     if(desktop.on){ toast('Nie udało się otworzyć Bambu Studio: ' + e); return; }
     helper.ok = false; renderLib(); refreshSingle();
@@ -1473,7 +1526,7 @@ function plate3mf(pl, r){
   for(const p of pl.pieces){
     const key = p.code ? 'i' + p.id : 't' + p.tid;
     if(!idx.has(key)){ idx.set(key, objs.length); objs.push(print3mfObject(tpl(p.tid), 1, p.code)); }
-    placements.push({obj: idx.get(key), x: p.x, y: p.y, rot: p.rot});
+    placements.push(p.ang != null ? {obj: idx.get(key), x: p.x + p.pw/2, y: p.y + p.pd/2, rot: false, ang: p.ang} : {obj: idx.get(key), x: p.x, y: p.y, rot: p.rot});
   }
   return make3mfPlacedBlob(objs, placements, `Płyta ${pl.index} z ${r.plates.length} — organizer ${state.drawer.w}x${state.drawer.d}`);
 }
@@ -1484,6 +1537,12 @@ function plateSvg(pl){
   let sv = `<svg viewBox="-4 -4 ${B + 8} ${B + 8}" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="${B}" height="${B}" rx="6" fill="var(--floor)" stroke="var(--wall)" stroke-width="1.5"/>`;
   for(const p of pl.pieces){
     const y = B - p.y - p.pd, c = p.colors[0];   // przód stołu na dole
+    if(p.ang != null){   // po przekątnej: prostokąt w × d obrócony wokół środka (w SVG oś y w dół, więc kąt odwrotny)
+      const cx = p.x + p.pw/2, cy = y + p.pd/2;
+      sv += `<rect x="${cx - p.w/2}" y="${cy - p.d/2}" width="${p.w}" height="${p.d}" rx="2" transform="rotate(${-p.ang} ${cx} ${cy})" fill="${c}" fill-opacity=".85" stroke="#000" stroke-opacity=".35"/>`;
+      if(codes) sv += `<text x="${cx}" y="${cy + 5}" font-size="14" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-weight="600" fill="#111" stroke="#fff" stroke-width="2.8" paint-order="stroke">${p.code}</text>`;
+      continue;
+    }
     sv += `<rect x="${p.x}" y="${y}" width="${p.pw}" height="${p.pd}" rx="2" fill="${c}" fill-opacity=".85" stroke="#000" stroke-opacity=".35"/>`;
     if(p.colors[1]) sv += `<rect x="${p.x}" y="${y}" width="${p.pw}" height="${p.pd}" rx="2" fill="none" stroke="${p.colors[1]}" stroke-width="4"/>`;
     const f = Math.min(14, p.pw / 3.2, p.pd / 1.6);
@@ -1495,12 +1554,18 @@ let planR = null;
 function renderPlan(){
   if(!state.drawer || !state.items.length){ $('#plGrid').innerHTML = '<p class="hint">Ułóż najpierw moduły w szufladzie.</p>'; $('#plSum').textContent = ''; $('#plDays').innerHTML = ''; return; }
   const r = planR = computePlan(), real = slicedFor(r), tk = timeK(), gk = gramK();
-  const mins = r.plates.map(pl => real[pl.index] ? real[pl.index].s / 60 : pl.mins * tk);
-  const grams = r.plates.map(pl => real[pl.index] ? real[pl.index].g : pl.grams * gk);
+  const tot = state.sliced && state.sliced.sig === r.sig ? state.sliced.total : null;
+  let mins = r.plates.map(pl => real[pl.index] ? real[pl.index].s / 60 : pl.mins * tk);
+  let grams = r.plates.map(pl => real[pl.index] ? real[pl.index].g : pl.grams * gk);
+  // projekt „komplet” z Bambu Studio: sumy dokładne, podział na płyty planu proporcjonalnie do szacunku
+  if(tot && !Object.keys(real).length){
+    const sm = mins.reduce((a, b) => a + b, 0) || 1, sg = grams.reduce((a, b) => a + b, 0) || 1;
+    mins = mins.map(m => m * (tot.s / 60) / sm); grams = grams.map(g => g * tot.g / sg);
+  }
   const nReal = r.plates.filter(pl => real[pl.index]).length, groups = new Set(r.plates.map(p => p.group)).size;
   $('#plSum').innerHTML = `<b>${r.plates.length} ${r.plates.length === 1 ? 'płyta' : r.plates.length < 5 ? 'płyty' : 'płyt'}</b> · ok. <b>${fmtDur(mins.reduce((a, b) => a + b, 0))}</b> · ${fmt(grams.reduce((a, b) => a + b, 0), 0)} g filamentu`
-    + (state.settings.planAms ? ' · kolory razem (AMS)' : ` · ${groups} ${groups === 1 ? 'kolor' : 'kolory'}`)
-    + `<br><span class="hint">${nReal === r.plates.length ? 'Czas i filament z pociętych plików Bambu Studio.' : nReal ? `Dla ${nReal} z ${r.plates.length} płyt dane z Bambu Studio, reszta to szacunek.` : calibInfo()}</span>`;
+    + (state.settings.planAms ? ' · kolory razem (AMS)' : ` · ${groups} ${groups === 1 ? 'kolor' : groups < 5 ? 'kolory' : 'kolorów'}`)
+    + `<br><span class="hint">${tot && !nReal ? `Czas i filament z projektu Bambu Studio (${tot.n} ${tot.n === 1 ? 'płyta' : tot.n < 5 ? 'płyty' : 'płyt'} po rozmieszczeniu, ${esc(tot.file)}).` : nReal === r.plates.length ? 'Czas i filament z pociętych plików Bambu Studio.' : nReal ? `Dla ${nReal} z ${r.plates.length} płyt dane z Bambu Studio, reszta to szacunek.` : calibInfo()}</span>`;
   const H = Math.max(1, Math.min(24, +state.settings.planHours || 16)), days = planDays(mins, H);
   $('#plDays').innerHTML = days.map((d, i) => `<span><b>Dzień ${i + 1}:</b> ${d.length === 1 ? 'płyta ' + (d[0] + 1) : `płyty ${d[0] + 1}–${d[d.length - 1] + 1}`} (${fmtDur(d.reduce((a, k) => a + mins[k], 0))})</span>`).join('')
     + (days.length > 5 ? `<span class="kitnote">Druk zajmie ${days.length} dni przy ${H} h dziennie — więcej niż 5 dni roboczych.</span>` : '');
@@ -1509,10 +1574,11 @@ function renderPlan(){
     const rl = real[pl.index], cols = plateColors(pl);
     return `<div class="plcard"><div class="plprev">${plateSvg(pl)}</div>
       <div class="plhead"><b>Płyta ${pl.index}</b><span>${cols.map(c => `<span class="dot" style="background:${c}"></span>${esc(colorLabel(c))}`).join(' + ')}</span></div>
-      <div class="plstat">${pl.pieces.length} szt. · ${rl ? '' : 'ok. '}${fmtDur(mins[i])} · ${fmt(grams[i], 0)} g · zajęcie ${fmt(pl.fill * 100, 0)}%${rl ? ' <span class="chip ok" title="' + esc(rl.file) + '">Bambu Studio</span>' : ''}</div>
+      <div class="plstat">${pl.pieces.length} szt. · ${rl ? '' : 'ok. '}${fmtDur(mins[i])} · ${fmt(grams[i], 0)} g · zajęcie ${fmt(pl.fill * 100, 0)}%${rl ? ' <span class="chip ok" title="' + esc(rl.file) + '">Bambu Studio</span>' : ''}${pl.pieces[0].ang != null ? ' · <b>po przekątnej</b>' : ''}</div>
       <div class="row">${helper.ok ? `<button class="btn sm pri" data-pl="open" data-i="${i}" type="button">Otwórz w Bambu Studio</button>` : ''}<button class="btn sm" data-pl="dl" data-i="${i}" type="button">Pobierz 3MF</button></div></div>`;
   }).join('');
   $('#plZip').disabled = !r.plates.length;
+  $('#plAll').textContent = helper.ok ? 'Wyślij wszystko do Bambu Studio' : 'Wszystko w jednym pliku (3MF)';
 }
 function openPlan(){
   if(!state.drawer || !state.items.length){ toast('Ułóż najpierw moduły w szufladzie.'); return; }
@@ -1534,33 +1600,47 @@ $('#plZip').onclick = async () => {
   for(const pl of r.plates) files.push({name: withOrder(plateName(pl, r)), data: new Uint8Array(await plate3mf(pl, r).arrayBuffer())});
   offer(`plyty_${r.plates.length}_organizer_${state.drawer.w}x${state.drawer.d}.zip`, zip(files));
 };
+$('#plAll').onclick = () => {
+  if(helper.ok) return sendAll();
+  const r = planR || computePlan(); offer(withOrder(allName(r)), allBlob(r));
+};
 $('#plImport').onclick = () => $('#plFile').click();
 $('#plFile').addEventListener('change', async e => {
   const files = [...e.target.files]; e.target.value = ''; if(!files.length) return;
-  const r = planR || computePlan(), got = [], skipped = [];
+  const r = planR || computePlan(), got = [], skipped = []; let gotAll = 0;
   if(!state.sliced || state.sliced.sig !== r.sig) state.sliced = {sig: r.sig, plates: {}};
   for(const f of files){
     let sl = null;
     try{ sl = await readSliced(new Uint8Array(await f.arrayBuffer())); }catch(err){ skipped.push(`${f.name} (${err.message || err})`); continue; }
     if(!sl){ skipped.push(`${f.name} (plik nie był pocięty — w Bambu Studio: Pokrój, potem Eksportuj pocięty plik płyty)`); continue; }
     const byName = plateFromName(f.name), of = f.name.match(/plyta-\d+-z-(\d+)/i);
+    // projekt „komplet” (wszystkie moduły w jednym pliku, płyty rozmieścił Bambu Studio): liczy się suma
+    if(/komplet_/i.test(f.name) || (!byName && sl.length > 1 && sl.length !== r.plates.length)){
+      const S = sl.reduce((a, p) => a + p.seconds, 0), G = sl.reduce((a, p) => a + p.grams, 0);
+      state.sliced.total = {s: S, g: G, n: sl.length, file: f.name}; state.sliced.plates = {};
+      const kt = (S / 60) / r.plates.reduce((a, pl) => a + pl.mins, 0), kg = G / r.plates.reduce((a, pl) => a + pl.grams, 0);
+      if(kt > 0.3 && kt < 4 && kg > 0.3 && kg < 4){ state.settings.calib = [...(state.settings.calib || []), {t: kt, g: kg}].slice(-12); }
+      gotAll = sl.length; continue;
+    }
     if(of && +of[1] !== r.plates.length){ skipped.push(`${f.name} (plik z planu na ${of[1]} płyt, a teraz plan ma ${r.plates.length} — układ się zmienił)`); continue; }
     // plik jednej płyty zapisanej przez konfigurator (numer w nazwie) albo projekt ze wszystkimi płytami w tej samej kolejności
     const pairs = byName && sl.length === 1 ? [[byName, sl[0]]] : sl.length === r.plates.length ? sl.map(p => [p.index, p]) : r.plates.length === 1 && sl.length === 1 ? [[1, sl[0]]] : [];
     if(!pairs.length){ skipped.push(`${f.name} (nie wiadomo, której płyty dotyczy — zostaw nazwę pliku nadaną przez konfigurator)`); continue; }
     for(const [idx, p] of pairs){
       const pl = r.plates.find(x => x.index === idx); if(!pl) continue;
-      state.sliced.plates[idx] = {s: p.seconds, g: p.grams, file: f.name};
+      state.sliced.plates[idx] = {s: p.seconds, g: p.grams, file: f.name}; delete state.sliced.total; gotAll = 0;
       const kt = (p.seconds / 60) / pl.mins, kg = p.grams / pl.grams;   // szacunek bez kalibracji → rzeczywistość
       if(kt > 0.3 && kt < 4 && kg > 0.3 && kg < 4){ state.settings.calib = [...(state.settings.calib || []), {t: kt, g: kg}].slice(-12); }
       got.push(idx);
     }
   }
   // komplet płyt z Bambu Studio: koszt liczony z dokładnych wartości
-  const real = state.sliced.plates, all = r.plates.every(pl => real[pl.index]);
-  if(all){ state.settings.cost.grams = Math.round(r.plates.reduce((a, pl) => a + real[pl.index].g, 0)); state.settings.cost.hours = Math.round(r.plates.reduce((a, pl) => a + real[pl.index].s, 0) / 360) / 10; }
+  const real = state.sliced.plates, all = r.plates.every(pl => real[pl.index]), tot = state.sliced.total;
+  if(gotAll && tot){ state.settings.cost.grams = Math.round(tot.g); state.settings.cost.hours = Math.round(tot.s / 360) / 10; }
+  else if(all){ state.settings.cost.grams = Math.round(r.plates.reduce((a, pl) => a + real[pl.index].g, 0)); state.settings.cost.hours = Math.round(r.plates.reduce((a, pl) => a + real[pl.index].s, 0) / 360) / 10; }
   commit(); renderPlan();
-  toast((got.length ? `Wczytano dane z Bambu Studio dla płyt: ${[...new Set(got)].sort((a, b) => a - b).join(', ')}.` + (all ? ' Koszt liczony z dokładnych wartości.' : '') : 'Nie wczytano żadnej płyty.')
+  toast((gotAll ? `Wczytano projekt z Bambu Studio: ${gotAll} ${gotAll === 1 ? 'płyta' : gotAll < 5 ? 'płyty' : 'płyt'}, ${fmtDur(tot.s / 60)}, ${fmt(tot.g, 0)} g. Koszt liczony z dokładnych wartości.`
+      : got.length ? `Wczytano dane z Bambu Studio dla płyt: ${[...new Set(got)].sort((a, b) => a - b).join(', ')}.` + (all ? ' Koszt liczony z dokładnych wartości.' : '') : 'Nie wczytano żadnej płyty.')
     + (skipped.length ? ' Pominięto: ' + skipped.join('; ') : ''));
 });
 

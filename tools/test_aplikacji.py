@@ -37,8 +37,9 @@ def main():
         assert pg.is_visible('#jobsBtn'), 'brak przycisku Folder zleceń'
         assert 'folderze zleceń' in pg.inner_text('#slicerBox'), pg.inner_text('#slicerBox')
         pg.click('[data-act=add] >> nth=0'); pg.click('[data-act=add] >> nth=1'); pg.wait_for_timeout(300)
-        pg.click('#toSlicer'); pg.wait_for_timeout(400)   # kilka płyt → plan płyt; płytę otwiera się z planu
-        assert pg.is_visible('#ovPlan'), 'brak planu płyt po kliknięciu Otwórz w Bambu Studio'
+        pg.click('#toSlicer'); pg.wait_for_timeout(1200)   # wszystkie moduły naraz, jeden plik „komplet”
+        assert not pg.is_visible('#ovPlan'), 'wysyłka wszystkiego nie powinna otwierać planu'
+        pg.click('#planBtn'); pg.wait_for_timeout(300)        # pojedyncza płyta z planu nadal działa
         pg.click('#plGrid [data-pl=open] >> nth=0'); pg.wait_for_timeout(1200); pg.click('#plClose')
         pg.click('#dlAll'); pg.wait_for_timeout(800)
         pg.click('#jobsBtn'); pg.wait_for_timeout(200)
@@ -55,11 +56,12 @@ def main():
     upd = [c['cmd'] for c in calls if c['cmd'] in ('app_version', 'update_check', 'update_install')]
     calls = [c for c in calls if c['cmd'] not in ('app_version', 'update_check', 'update_install')]
     seq = [c['cmd'] for c in calls]
-    want = ['slicer_status', 'save_job', 'open_in_slicer', 'save_job', 'open_jobs_folder', 'save_job', 'open_in_slicer']
+    want = ['slicer_status', 'save_job', 'open_in_slicer', 'save_job', 'open_in_slicer', 'save_job', 'open_jobs_folder', 'save_job', 'open_in_slicer']
     names = [c['opts']['headers']['x-name'] for c in calls if c['cmd'] == 'save_job']
     import re
-    ok_names = len(names) == 3 and re.fullmatch(r'plyta-1-z-\d+_[0-9a-z+-]+_organizer_400x480\.3mf', names[0]) is not None \
-        and names[1:] == ['organizer_szuflada_400x480.zip', 'ZAM_1234-A_wieszak-na-grzejnik_wieszak-20-20_x4.3mf']
+    ok_names = len(names) == 4 and re.fullmatch(r'komplet_\d+-szt_organizer_400x480\.3mf', names[0]) is not None \
+        and re.fullmatch(r'plyta-1-z-\d+_[0-9a-z+-]+_organizer_400x480\.3mf', names[1]) is not None \
+        and names[2:] == ['organizer_szuflada_400x480.zip', 'ZAM_1234-A_wieszak-na-grzejnik_wieszak-20-20_x4.3mf']
     if not ok_names: print('nazwy:', names)
     if upd != ['app_version', 'update_check', 'update_install']: print('aktualizacje:', upd)
     ok = upd == ['app_version', 'update_check', 'update_install'] and ok_names and seq == want and all(c.get('bytes', 1) > 1000 for c in calls if c['cmd'] == 'save_job') and not errs

@@ -62,13 +62,13 @@ export function make3mfBlob(objects: Print3mfObject[], bed: number, title: strin
   return new Blob(zipParts(threemfEntries(model3mfXml(objects, bed, title))) as BlobPart[], { type: 'model/3mf' });
 }
 
-/** Część ułożona na płycie: obiekt (indeks w `objects`), lewy przedni narożnik na płycie i obrót o 90°. */
-export interface Placement3mf { obj: number; x: number; y: number; rot: boolean }
+/** Część ułożona na płycie: obiekt (indeks w `objects`), lewy przedni narożnik na płycie i obrót o 90°.
+ *  Z `ang` (stopnie, obrót wokół osi z): x, y to środek części — tak układane są moduły po przekątnej stołu. */
+export interface Placement3mf { obj: number; x: number; y: number; rot: boolean; ang?: number }
 
-/** Projekt 3MF jednej płyty: obiekty ustawione dokładnie tam, gdzie wskazał plan płyt (bez automatycznego układania). */
-export function model3mfPlacedXml(objects: Print3mfObject[], placements: Placement3mf[], title: string): string {
+function placedModel(objects: Print3mfObject[], placements: Placement3mf[], title: string) {
   let objs = '', items = '', oid = 0;
-  const top: number[] = [];
+  const top: number[] = [], partIds: number[][] = [];
   const meshObj = (mesh: Mesh, name: string) => {
     const P = mesh.pos, idx = new Map<string, number>(), verts: string[][] = [], tris: number[] = [];
     for (let i = 0; i < P.length; i += 3) {
@@ -84,24 +84,67 @@ export function model3mfPlacedXml(objects: Print3mfObject[], placements: Placeme
     return oid;
   };
   for (const ob of objects) {
-    if (ob.parts.length === 1) top.push(meshObj(ob.parts[0].mesh, ob.parts[0].name));
+    if (ob.parts.length === 1) { const id = meshObj(ob.parts[0].mesh, ob.parts[0].name); top.push(id); partIds.push([id]); }
     else {
       const ids = ob.parts.map(p => meshObj(p.mesh, p.name));
       oid++; objs += `<object id="${oid}" name="${xesc(ob.name)}" type="model"><components>${ids.map(i => `<component objectid="${i}"/>`).join('')}</components></object>`;
-      top.push(oid);
+      top.push(oid); partIds.push(ids);
     }
   }
   for (const p of placements) {
     const ob = objects[p.obj];
+    if (p.ang != null) {
+      // obrót o ang wokół z (wiersze macierzy jak w 3MF: p' = p·M + t), środek bryły (w/2, d/2) trafia w (x, y)
+      const r = p.ang * Math.PI / 180, c = Math.cos(r), s = Math.sin(r), hx = ob.size.w / 2, hy = ob.size.d / 2;
+      const tx = p.x - (hx * c - hy * s), ty = p.y - (hx * s + hy * c);
+      const nr = (v: number) => { const q = Math.round(v * 1e9) / 1e9; return (Object.is(q, -0) ? 0 : q).toString(); };   // macierz obrotu: 9 miejsc, bez skalowania
+      items += `<item objectid="${top[p.obj]}" transform="${nr(c)} ${nr(s)} 0 ${nr(-s)} ${nr(c)} 0 0 0 1 ${nr(tx)} ${nr(ty)} 0"/>`;
+    }
     // obrót o +90° wokół z: (x, y) → (−y, x); bryła zajmuje wtedy x ∈ [−d, 0], więc przesunięcie o d
-    items += p.rot ? `<item objectid="${top[p.obj]}" transform="0 1 0 -1 0 0 0 0 1 ${nf(p.x + ob.size.d)} ${nf(p.y)} 0"/>`
+    else items += p.rot ? `<item objectid="${top[p.obj]}" transform="0 1 0 -1 0 0 0 0 1 ${nf(p.x + ob.size.d)} ${nf(p.y)} 0"/>`
       : `<item objectid="${top[p.obj]}" transform="1 0 0 0 1 0 0 0 1 ${nf(p.x)} ${nf(p.y)} 0"/>`;
   }
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="pl-PL" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">` +
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="pl-PL" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">` +
     `<metadata name="Title">${xesc(title)}</metadata><metadata name="Application">Konfigurator szuflady</metadata>` +
     `<resources>${objs}</resources><build>${items}</build></model>`;
+  return { xml, top, partIds };
+}
+
+/** Projekt 3MF jednej płyty: obiekty ustawione dokładnie tam, gdzie wskazał plan płyt (bez automatycznego układania). */
+export function model3mfPlacedXml(objects: Print3mfObject[], placements: Placement3mf[], title: string): string {
+  return placedModel(objects, placements, title).xml;
 }
 
 export function make3mfPlacedBlob(objects: Print3mfObject[], placements: Placement3mf[], title: string): Blob {
   return new Blob(zipParts(threemfEntries(model3mfPlacedXml(objects, placements, title))) as BlobPart[], { type: 'model/3mf' });
+}
+
+/** Numer filamentu (od 1) dla obiektu: jeden dla całego obiektu albo osobno dla każdej części (dół, góra). */
+export type Filament3mf = number | number[];
+
+/** Przypisanie filamentów w Metadata/model_settings.config. Bambu Studio czyta je także z pliku spoza Bambu Studio
+ *  (BambuStudio src/libslic3r/Format/bbs_3mf.cpp: metadane obiektu i części trafiają do ich konfiguracji, „extruder”
+ *  przetrwa wczytanie samej geometrii), a brakujące filamenty dodaje samo. Rozmieszczanie (A) tworzy wtedy płyty
+ *  i nie miesza kolorów na płycie, gdy w ustawieniach rozmieszczania wyłączone jest „wiele materiałów na płycie”. */
+export function modelSettingsXml(objects: Print3mfObject[], top: number[], partIds: number[][], filaments: Filament3mf[]): string {
+  let x = '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n';
+  objects.forEach((ob, i) => {
+    const f = filaments[i];
+    x += `  <object id="${top[i]}">\n    <metadata key="name" value="${xesc(ob.name)}"/>\n`;
+    if (typeof f === 'number') x += `    <metadata key="extruder" value="${f}"/>\n`;
+    else partIds[i].forEach((pid, k) => {
+      x += `    <part id="${pid}" subtype="normal_part">\n      <metadata key="name" value="${xesc(ob.parts[k].name)}"/>\n` +
+        `      <metadata key="extruder" value="${f[k] ?? f[0]}"/>\n    </part>\n`;
+    });
+    x += '  </object>\n';
+  });
+  return x + '</config>\n';
+}
+
+/** Całe zamówienie w jednym 3MF do Bambu Studio: wszystkie moduły (w kolejności płyt z planu), z przypisanymi filamentami. */
+export function make3mfAllBlob(objects: Print3mfObject[], placements: Placement3mf[], filaments: Filament3mf[], title: string): Blob {
+  const m = placedModel(objects, placements, title);
+  const entries = threemfEntries(m.xml);
+  entries.push({ name: 'Metadata/model_settings.config', data: new TextEncoder().encode(modelSettingsXml(objects, m.top, m.partIds, filaments)) });
+  return new Blob(zipParts(entries) as BlobPart[], { type: 'model/3mf' });
 }
